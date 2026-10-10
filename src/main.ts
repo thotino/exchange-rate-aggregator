@@ -1,0 +1,29 @@
+import { GetExchangeRate } from "./application/GetExchangeRate";
+import { ProviderA } from "./domain/ProviderA";
+import { ProviderB } from "./domain/ProviderB";
+import * as providers from "./infrastructure/providers";
+import { Webserver } from "./Webserver";
+
+const providerA = new ProviderA("http://localhost:3001")
+const providerB = new ProviderB("http://localhost:3002")
+
+const exchangeRateGetter = new GetExchangeRate(providerA, providerB)
+const webserver = new Webserver(exchangeRateGetter)
+async function main() {
+    for (const connector of Object.values(providers)) {
+        await connector.start();
+    }
+    await webserver.start()
+}
+async function onFinishEvent(error: Error | null) {
+    if (Error.isError(error)) console.error(error)
+    await webserver.stop()
+    for (const connector of Object.values(providers)) {
+        await connector.stop();
+    }
+}
+if (process.argv[1] === import.meta.filename) {
+    main().catch(onFinishEvent);
+    process.on("SIGINT", onFinishEvent);
+    process.on("SIGTERM", onFinishEvent);
+}
