@@ -1,0 +1,20 @@
+{
+    "webserver": {
+        "host": "WEBSERVER_HOST",
+        "port": "WEBSERVER_PORT"
+    },
+    "providers": {
+        "providerA": {
+            "host": "HOST_PROVIDER_A",
+            "port": "PORT_PROVIDER_A",
+            "simulationMode": "SIMULATION_MODE_PROVIDER_A",
+            "simulationDelayMs": "SIMULATION_DELAY_PROVIDER_A"
+        },
+        "providerB": {
+            "host": "HOST_PROVIDER_B",
+            "port": "PORT_PROVIDER_B",
+            "simulationMode": "SIMULATION_MODE_PROVIDER_B",
+            "simulationDelayMs": "SIMULATION_DELAY_PROVIDER_B"
+        }
+    }
+}

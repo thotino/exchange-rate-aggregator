@@ -1,0 +1,31 @@
+{
+  "name": "exchange-rate-aggregator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "node --env-file=.env.dev --import=tsx src/main.ts",
+    "dev:inspect": "node --inspect-brk=0.0.0.0:9229 --env-file=.env.dev --import=tsx src/main.ts",
+    "prettier": "prettier --write \"src/**/*.ts\"",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/config": "^3.3.5",
+    "@types/node": "^26.6.4",
+    "@vitest/eslint-plugin": "^1.6.27",
+    "dotenv": "^18.0.7",
+    "eslint": "^9.39.5",
+    "jiti": "^2.7.0",
+    "prettier": "^3.9.9",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "config": "^5.0.1"
+  }
+}
