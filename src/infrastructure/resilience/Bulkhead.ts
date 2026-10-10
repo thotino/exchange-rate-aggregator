@@ -6,14 +6,14 @@ interface BulkheadOptions {
 
 export class Bulkhead {
     #name: string;
-    #maxConcurrent: number;
-    #permits: number;
-    #maxWaiting: number;
-    #timeoutMS: number;
+    #maxConcurrent: number = 10;
+    #permits: number = 1;
+    #maxWaiting: number = 20;
+    #timeoutMS: number = 10_000;
     #waitQueue: {
         resolve: () => void;
         reject: (error: Error) => void;
-        timer: number;
+        timer: NodeJS.Timeout;
     }[] = [];
     #metrics: {
         acquired: number;
@@ -22,7 +22,7 @@ export class Bulkhead {
         completed: number;
         failed: number;
     } = { acquired: 0, rejected: 0, timedOut: 0, completed: 0, failed: 0 };
-    constructor(name: string, config: BulkheadOptions) {
+    constructor(name: string, config: BulkheadOptions = {}) {
         this.#name = name;
     }
 

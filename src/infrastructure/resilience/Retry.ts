@@ -22,7 +22,7 @@ type HTTPError = Error & {
     };
 };
 export class Retry {
-    #maxAttempts: number = 3;
+    #maxAttempts: number = 5;
     #initialDelay: number = 1000;
     #maxDelay: number = 30000;
     #factor: number = 2;

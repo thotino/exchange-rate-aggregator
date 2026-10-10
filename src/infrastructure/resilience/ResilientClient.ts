@@ -11,7 +11,9 @@ export class ResilientClient {
         readonly retry: Retry,
     ) {}
     execute<T>(fn: () => Promise<T>) {
-        return this.retry.execute(fn);
+        return this.bulkHead.execute(() =>
+            this.circuitBreaker.execute(() => this.retry.execute(fn)),
+        );
         // return this.rateLimiter.execute(() =>
         //     this.bulkHead.execute(() =>
         //         this.circuitBreaker.execute(() => this.retry.execute(fn)),

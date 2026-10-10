@@ -5,7 +5,7 @@ enum CircuitBreakerStates {
 }
 
 export class CircuitBreaker {
-    #failureThreshold = 5;
+    #failureThreshold = 1;
     #resetTimeout = 30_000;
     #halfOpenRequests = 1;
     #state = CircuitBreakerStates.CLOSED;
@@ -22,6 +22,7 @@ export class CircuitBreaker {
                 Date.now() - this.#lastFailure > this.#resetTimeout
             ) {
                 this.#state = CircuitBreakerStates.HALF_OPEN;
+                console.log('Circuit breaker: OPEN -> HALF_OPEN');
                 this.#halfOpenAttemps = 0;
             } else {
                 throw new Error("ERR_CIRCUIT_BREAKER_OPEN");
@@ -51,6 +52,7 @@ export class CircuitBreaker {
             this.#successes++;
             if (this.#successes >= this.#halfOpenRequests) {
                 this.#state = CircuitBreakerStates.CLOSED;
+                console.log('Circuit breaker: HALF_OPEN -> CLOSED');
                 this.#failures = 0;
                 this.#successes = 0;
             }
@@ -64,9 +66,11 @@ export class CircuitBreaker {
         this.#lastFailure = Date.now();
         if (this.#state === CircuitBreakerStates.HALF_OPEN) {
             this.#state = CircuitBreakerStates.OPEN;
+            console.log('Circuit breaker: HALF OPEN -> OPEN');
             this.#successes = 0;
         } else if (this.#failures >= this.#failureThreshold) {
             this.#state = CircuitBreakerStates.OPEN;
+            console.log('Circuit breaker: CLOSED -> OPEN');
         }
     }
 
