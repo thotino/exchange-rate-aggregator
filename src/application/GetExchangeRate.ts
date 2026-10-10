@@ -19,14 +19,19 @@ export class GetExchangeRate {
         readonly providerB: RateProvider,
     ) {}
     async get(sourceCurrency: Currencies, targetCurrency: Currencies) {
-        const ratesA = await this.providerA.getRates(
-            sourceCurrency,
-            targetCurrency,
-        );
-        // const ratesB = await this.providerB.getRates(
-        //     sourceCurrency,
-        //     targetCurrency,
-        // );
-        console.log({ ratesA });
+        try {
+            const ratesA = await this.providerA.getRates(
+                sourceCurrency,
+                targetCurrency,
+            );
+            return ratesA;
+        } catch (error) {
+            console.error({ error });
+            const ratesB = await this.providerB.getRates(
+                sourceCurrency,
+                targetCurrency,
+            );
+            return ratesB;
+        }
     }
 }

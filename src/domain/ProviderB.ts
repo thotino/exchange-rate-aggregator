@@ -7,8 +7,14 @@ export class ProviderB {
         this.baseUrl = url;
     }
     async getRates(sourceCurrency: Currencies, targetCurrency: Currencies) {
-        const fn = () =>
-            fetch(`${this.baseUrl}/rates/${sourceCurrency}/${targetCurrency}`);
+        const timeOut = AbortSignal.timeout(20);
+        const fn = async () => {
+            const response = await fetch(
+                `${this.baseUrl}/rates/${sourceCurrency}/${targetCurrency}`,
+                { signal: timeOut },
+            );
+            return response.json();
+        };
         const rates = await resilientClient.execute(fn);
         return {
             from: sourceCurrency,

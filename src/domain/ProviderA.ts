@@ -7,9 +7,11 @@ export class ProviderA {
         this.baseUrl = url;
     }
     async getRates(sourceCurrency: Currencies, targetCurrency: Currencies) {
+        const timeOut = AbortSignal.timeout(20);
         const fn = async () => {
             const response = await fetch(
                 `${this.baseUrl}/rates/${sourceCurrency}/${targetCurrency}`,
+                { signal: timeOut },
             );
             if (!response.ok) {
                 const error = new Error(`HTTP ${response.status}`);
