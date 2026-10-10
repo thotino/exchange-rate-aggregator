@@ -12,7 +12,7 @@ enum JitterStatuses {
     FULL = "full",
     EQUAL = "equal",
     NONE = "none",
-    DECORREATED = "decorrelate",
+    DECORRELATE = "decorrelate",
 }
 type HTTPError = Error & {
     code: string;
@@ -85,8 +85,8 @@ export class Retry {
     async execute<T>(
         fn: (options: { attempt: number; signal: AbortSignal }) => Promise<T>,
     ) {
-        let lastError: Error;
-        for (let attempt = 0; attempt < this.#maxAttempts; attempt++) {
+        let lastError: HTTPError;
+        for (let attempt = 1; attempt <= this.#maxAttempts; attempt++) {
             const controller = new AbortController();
             try {
                 const timeoutId = setTimeout(
@@ -103,7 +103,7 @@ export class Retry {
                 } finally {
                     clearTimeout(timeoutId);
                 }
-            } catch (error: HTTPError) {
+            } catch (error: Error) {
                 lastError = error;
                 if (error.name === "AbortError") {
                     throw new Error("ERR_TIMED_OUT");
@@ -117,7 +117,7 @@ export class Retry {
                 const delay = this.#calculateDelay(attempt, error);
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
-            throw lastError;
         }
+        throw lastError;
     }
 }

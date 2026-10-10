@@ -11,6 +11,11 @@ export class ProviderA {
             const response = await fetch(
                 `${this.baseUrl}/rates/${sourceCurrency}/${targetCurrency}`,
             );
+            if (!response.ok) {
+                const error = new Error(`HTTP ${response.status}`);
+                error.response = response;
+                throw error;
+            }
             return response.json();
         };
         const response = await resilientClient.execute(fn);
