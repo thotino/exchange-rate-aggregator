@@ -3,6 +3,10 @@ import type { AddressInfo } from "node:net";
 import { GetExchangeRate } from "./application/GetExchangeRate.js";
 import { Currencies } from "./interfaces/types.js";
 import config from "./config.js";
+import {
+    RateLimiter,
+    RateLimiterAlgorithms,
+} from "./infrastructure/resilience/RateLimiter.js";
 
 function sendJson(response: ServerResponse, statusCode: number, body: unknown) {
     response.writeHead(statusCode, {
@@ -13,11 +17,15 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown) {
 
 export class Webserver {
     #server: Server;
+    #rateLimiter: RateLimiter;
 
     constructor(private readonly getExchangeRate: GetExchangeRate) {
         this.#server = createServer((request, response) => {
             void this.#handleRequest(request, response);
         });
+        this.#rateLimiter = new RateLimiter(
+            RateLimiterAlgorithms.SLIDING_WINDOW,
+        );
     }
 
     async start(): Promise<number> {
@@ -64,7 +72,7 @@ export class Webserver {
             .pathname;
         const routeMatch = /^\/rates\/([^/]+)\/([^/]+)$/.exec(pathname);
 
-        if (!routeMatch) {
+        if (null == routeMatch) {
             sendJson(response, 404, { error: "Route not found" });
             return;
         }
@@ -74,10 +82,26 @@ export class Webserver {
             sendJson(response, 405, { error: "Method not allowed" });
             return;
         }
+        const ip = request.socket.remoteAddress;
+        if (ip == null) {
+            sendJson(response, 400, { error: "Unabe to identify user" });
+            return;
+        }
+        const limiterOutcome = this.#rateLimiter.isAllowed(ip);
+        const headers = new Headers({
+            "X-RateLimit-Limit": `${this.#rateLimiter.maxRequests}`,
+            "X-RateLimit-Remaining": `${limiterOutcome.remaining}`,
+        });
+        response.setHeaders(headers);
+        if (!limiterOutcome.allowed) {
+            sendJson(response, 429, {
+                error: "Too many requests",
+            });
+        }
 
         const sourceCurrency = Webserver.#toCurrency(routeMatch[1]);
         const destCurrency = Webserver.#toCurrency(routeMatch[2]);
-        if (!sourceCurrency || !destCurrency) {
+        if (sourceCurrency == null || destCurrency == null) {
             sendJson(response, 400, { error: "Unsupported currency code" });
             return;
         }
@@ -88,8 +112,9 @@ export class Webserver {
                 destCurrency,
             );
             sendJson(response, 200, result);
-        } catch {
-            sendJson(response, 502, { error: "Exchange rate unavailable" });
+        } catch (error) {
+            console.error({ error });
+            sendJson(response, 502, { error });
         }
     }
 

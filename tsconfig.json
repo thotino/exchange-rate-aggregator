@@ -1,7 +1,7 @@
 {
     "compilerOptions": {
-        "target": "ES2024",
-        "module": "node20",
+        "target": "ES2025",
+        "module": "es2022",
         "moduleResolution": "node16",
         "types": ["node"],
         "rootDir": "./src",
