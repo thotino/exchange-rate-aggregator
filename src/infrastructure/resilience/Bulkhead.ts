@@ -141,7 +141,10 @@ export class BulkheadRegistry {
         return bulkhead;
     }
     get(name: string) {
-        return this.#bulheads.get(name)!;
+        if (!this.#bulheads.has(name)) {
+            throw new Error("ERR_BULKHEAD_NOT_REGISTERED")
+        }
+        return this.#bulheads.get(name);
     }
     getAllMetrics() {
         const metrics: Record<string, object> = {};
