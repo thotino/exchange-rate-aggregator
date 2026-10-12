@@ -1,4 +1,9 @@
+/**
+ * @see https://oneuptime.com/blog/post/2026-01-06-nodejs-rate-limiting-no-external-services/view
+ */
+
 interface RateLimiterInterface {
+    get maxRequests(): number;
     isAllowed: (id: string) => {
         allowed: boolean;
         remaining: number;
@@ -7,7 +12,7 @@ interface RateLimiterInterface {
         currentCount?: number;
     };
 }
-enum RateLimiterAlgorithms {
+export enum RateLimiterAlgorithms {
     FIXED_WINDOW = "fixed-window",
     SLIDING_WINDOW = "sliding-window",
     TOKEN_BUCKET = "token-bucket",
@@ -21,6 +26,9 @@ class FixedWindowRateLimiter implements RateLimiterInterface {
     #getWindowKey(identifier: string) {
         const windowStart = Math.floor(Date.now() / this.#windowMS);
         return `${identifier}:${windowStart}`;
+    }
+    get maxRequests() {
+        return this.#maxRequests;
     }
     isAllowed(id: string) {
         const key = this.#getWindowKey(id);
@@ -68,6 +76,9 @@ class SlidingWindowLogLimiter implements RateLimiterInterface {
             remaining: this.#maxRequests - requests.length,
         };
     }
+    get maxRequests() {
+        return this.#maxRequests;
+    }
     cleanup() {
         const now = Date.now();
         const windowStart = now - this.#windowMS;
@@ -87,6 +98,9 @@ class SlidingWindowCounterLimiter implements RateLimiterInterface {
     #maxRequests: number = 100;
     #windows: Map<string, number> = new Map();
     constructor() {}
+    get maxRequests() {
+        return this.#maxRequests;
+    }
     isAllowed(id: string) {
         const now = Date.now();
         const currentWindowStart =
@@ -134,6 +148,9 @@ class TokenBucketLimiter implements RateLimiterInterface {
     #refillRate = 1;
     #buckets: Map<string, Bucket> = new Map();
     constructor() {}
+    get maxRequests() {
+        return this.#bucketSize;
+    }
     #getBucket(id: string) {
         if (!this.#buckets.has(id)) {
             this.#buckets.set(id, {
@@ -190,7 +207,10 @@ export class RateLimiter {
         [RateLimiterAlgorithms.TOKEN_BUCKET]: new TokenBucketLimiter(),
     };
     constructor(readonly algorithm: RateLimiterAlgorithms) {}
-    execute<T>(fn: () => Promise<T>) {
-        return this.#limiters[this.algorithm].isAllowed()
+    get maxRequests() {
+        return this.#limiters[this.algorithm].maxRequests
+    }
+    isAllowed(identifier: string) {
+        return this.#limiters[this.algorithm].isAllowed(identifier);
     }
 }

@@ -1,3 +1,7 @@
+/**
+ * @see https://oneuptime.com/blog/post/2026-01-06-nodejs-retry-exponential-backoff/view
+ */
+
 const RETRYABLE_ERRORS = new Set([
     "ETIMEDOUT",
     "ECONNRESET",
@@ -21,6 +25,14 @@ type HTTPError = Error & {
         headers: Headers;
     };
 };
+interface RetryOptions {
+    maxAttempts: number;
+    initialDelay: number;
+    maxDelay: number;
+    factor: number;
+    jitter: JitterStatuses;
+    timeout: number;
+}
 export class Retry {
     #maxAttempts: number = 5;
     #initialDelay: number = 1000;
@@ -28,7 +40,23 @@ export class Retry {
     #factor: number = 2;
     #jitter: JitterStatuses = JitterStatuses.FULL;
     #timeout: number = 30000;
-    constructor(options: {} = {}) {}
+    constructor(
+        options: RetryOptions = {
+            maxAttempts: 3,
+            initialDelay: 1000,
+            maxDelay: 30_000,
+            factor: 2,
+            jitter: JitterStatuses.FULL,
+            timeout: 30_000,
+        },
+    ) {
+        this.#maxAttempts = options.maxAttempts;
+        this.#initialDelay = options.initialDelay;
+        this.#maxDelay = options.maxDelay;
+        this.#factor = options.factor;
+        this.#jitter = options.jitter;
+        this.#timeout = options.timeout;
+    }
     #getHeader(headers: Headers, name: string) {
         if (headers == null) return null;
         return headers.get(name) ?? null;
@@ -77,7 +105,7 @@ export class Retry {
         ) {
             return true;
         }
-        if (this.#getHeader(error.response.headers, "retry-after")) {
+        if (this.#getHeader(error.response?.headers, "retry-after")) {
             return true;
         }
         return false;
@@ -103,7 +131,7 @@ export class Retry {
                 } finally {
                     clearTimeout(timeoutId);
                 }
-            } catch (error: Error) {
+            } catch (error) {
                 lastError = error;
                 if (error.name === "AbortError") {
                     throw new Error("ERR_TIMED_OUT");

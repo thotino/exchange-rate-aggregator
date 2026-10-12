@@ -1,9 +1,19 @@
+/**
+ * @see https://oneuptime.com/blog/post/2026-01-24-bulkhead-pattern-nodejs/view
+ */
+
 interface BulkheadOptions {
     readonly maxConcurrent: number;
     readonly maxWaiting: number;
     readonly timeoutMS: number;
 }
-
+interface BulkheadMetrics {
+    acquired: number;
+    rejected: number;
+    timedOut: number;
+    completed: number;
+    failed: number;
+}
 export class Bulkhead {
     #name: string;
     #maxConcurrent: number = 10;
@@ -15,15 +25,26 @@ export class Bulkhead {
         reject: (error: Error) => void;
         timer: NodeJS.Timeout;
     }[] = [];
-    #metrics: {
-        acquired: number;
-        rejected: number;
-        timedOut: number;
-        completed: number;
-        failed: number;
-    } = { acquired: 0, rejected: 0, timedOut: 0, completed: 0, failed: 0 };
-    constructor(name: string, config: BulkheadOptions = {}) {
+    #metrics: BulkheadMetrics = {
+        acquired: 0,
+        rejected: 0,
+        timedOut: 0,
+        completed: 0,
+        failed: 0,
+    };
+    constructor(
+        name: string,
+        config: BulkheadOptions = {
+            maxConcurrent: 10,
+            maxWaiting: 20,
+            timeoutMS: 10_000,
+        },
+    ) {
         this.#name = name;
+        this.#maxConcurrent = config.maxConcurrent ?? 10;
+        this.#permits = config.maxConcurrent ?? 1;
+        this.#maxWaiting = config.maxWaiting ?? 20;
+        this.#timeoutMS = config.timeoutMS ?? 10_000;
     }
 
     async #acquire() {
@@ -34,7 +55,11 @@ export class Bulkhead {
         }
         if (this.#waitQueue.length >= this.#maxWaiting) {
             this.#metrics.rejected++;
-            throw new BulkheadRejectedError();
+            throw new BulkheadRejectedError(
+                this.#name,
+                this.#maxConcurrent,
+                this.#waitQueue.length,
+            );
         }
         return new Promise<void>((resolve, reject) => {
             const timer = setTimeout(() => {
@@ -45,7 +70,7 @@ export class Bulkhead {
                     this.#waitQueue.splice(index, 1);
                 }
                 this.#metrics.timedOut++;
-                reject(new BulkheadTimeoutError());
+                reject(new BulkheadTimeoutError(this.#name, this.#timeoutMS));
             }, this.#timeoutMS);
             this.#waitQueue.push({ resolve, reject, timer });
         });
@@ -87,13 +112,21 @@ export class Bulkhead {
     }
 }
 class BulkheadRejectedError extends Error {
-    constructor() {
-        super();
+    code = "BULKHEAD_REJECTED";
+    value: { name: string; maxConcurrent: number; waitLength: number };
+    constructor(name: string, maxConcurrent: number, waitLength: number) {
+        const message = "Bulkhead is full";
+        super(message);
+        this.value = { name, maxConcurrent, waitLength };
     }
 }
 class BulkheadTimeoutError extends Error {
-    constructor() {
-        super();
+    code: string = "BULKHEAD_TIMED_OUT";
+    value: { name: string; timeout: number };
+    constructor(name: string, timeout: number) {
+        const message = "Bulkhead timed out";
+        super(message);
+        this.value = { name, timeout };
     }
 }
 
