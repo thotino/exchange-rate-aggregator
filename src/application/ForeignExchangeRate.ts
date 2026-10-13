@@ -1,5 +1,5 @@
-import { exchangeRateCache } from "../infrastructure/cache/ExchangeRateCache.js";
-import type { Currencies, Providers } from "../interfaces/types.js";
+import { exchangeRateCache } from "../infrastructure/cache/ExchangeRateCache";
+import type { Currencies, Providers } from "../interfaces/types";
 
 type Rate = {
     from: Currencies;
@@ -24,7 +24,7 @@ function withCache(originalMethod: Function, _context: ClassMethodDecoratorConte
         return exchangeRateCache.get(key);
     };
 }
-export class GetExchangeRate {
+export class ForeignExchangeRate {
     constructor(
         readonly providerA: RateProvider,
         readonly providerB: RateProvider,
