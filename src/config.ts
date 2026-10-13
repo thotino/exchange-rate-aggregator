@@ -1,5 +1,5 @@
 import conf from "config";
-import type { RateServerConfig } from "./interfaces/types.js";
+import type { RateServerConfig } from "./interfaces/types";
 type WebserverConfig = {
     host: string;
     port: number;

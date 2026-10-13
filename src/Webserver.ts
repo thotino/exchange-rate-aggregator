@@ -1,12 +1,12 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { GetExchangeRate } from "./application/GetExchangeRate.js";
-import { Currencies } from "./interfaces/types.js";
-import config from "./config.js";
+import { ForeignExchangeRate } from "./application/ForeignExchangeRate";
+import { Currencies } from "./interfaces/types";
+import config from "./config";
 import {
     RateLimiter,
     RateLimiterAlgorithms,
-} from "./infrastructure/resilience/RateLimiter.js";
+} from "./infrastructure/resilience/RateLimiter";
 
 function sendJson(response: ServerResponse, statusCode: number, body: unknown) {
     response.writeHead(statusCode, {
@@ -19,7 +19,7 @@ export class Webserver {
     #server: Server;
     #rateLimiter: RateLimiter;
 
-    constructor(private readonly getExchangeRate: GetExchangeRate) {
+    constructor(private readonly exchangeRate: ForeignExchangeRate) {
         this.#server = createServer((request, response) => {
             void this.#handleRequest(request, response);
         });
@@ -107,7 +107,7 @@ export class Webserver {
         }
 
         try {
-            const result = await this.getExchangeRate.get(
+            const result = await this.exchangeRate.get(
                 sourceCurrency,
                 destCurrency,
             );

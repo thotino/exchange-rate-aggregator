@@ -1,13 +1,13 @@
-import { GetExchangeRate } from "./application/GetExchangeRate";
-import { ProviderA } from "./domain/ProviderA";
-import { ProviderB } from "./domain/ProviderB";
+import { ForeignExchangeRate } from "./application/ForeignExchangeRate.js";
+import { ProviderA } from "./connectors/ProviderA";
+import { ProviderB } from "./connectors/ProviderB";
 import * as providers from "./infrastructure/providers";
 import { Webserver } from "./Webserver";
 
 const providerA = new ProviderA("http://localhost:3001")
 const providerB = new ProviderB("http://localhost:3002")
 
-const exchangeRateGetter = new GetExchangeRate(providerA, providerB)
+const exchangeRateGetter = new ForeignExchangeRate(providerA, providerB)
 const webserver = new Webserver(exchangeRateGetter)
 async function main() {
     for (const connector of Object.values(providers)) {

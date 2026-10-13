@@ -1,4 +1,4 @@
-import { Currencies } from "../../interfaces/types.js";
+import { Currencies } from "../../interfaces/types";
 function normalizeCurrencyCode(value: Currencies) {
     if (!/^[A-Za-z]{3}$/.test(value)) {
         return null;

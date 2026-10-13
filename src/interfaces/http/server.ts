@@ -1,6 +1,6 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
-import { ExchangeRate } from "../../infrastructure/providers/ExchangeRate.js";
-import { type RateServerConfig, SimulationModes } from "../types.js";
+import { ExchangeRate } from "../../infrastructure/providers/ExchangeRate";
+import { type RateServerConfig, SimulationModes } from "../types";
 
 function sendJson(response: ServerResponse, statusCode: number, body: unknown) {
     response.writeHead(statusCode, {

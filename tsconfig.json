@@ -2,7 +2,7 @@
     "compilerOptions": {
         "target": "ES2025",
         "module": "es2022",
-        "moduleResolution": "node16",
+        "moduleResolution": "node",
         "types": ["node"],
         "rootDir": "./src",
         "outDir": "./dist",
@@ -11,8 +11,10 @@
         "noEmitOnError": true,
         "verbatimModuleSyntax": true,
         "forceConsistentCasingInFileNames": true,
-        "skipLibCheck": true
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "strictNullChecks": true
     },
     "include": ["src/**/*.ts"],
-    "exclude": ["src/**/*.test.ts", "src/**/__tests__/**"]
+    "exclude": ["src/**/*.test.ts", "src/**/__tests__/**", "dist/**/*"]
 }

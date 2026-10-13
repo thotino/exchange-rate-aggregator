@@ -2,6 +2,7 @@
 /node_modules/
 /dist/
 /coverage/
+/.clinic/
 
 # Local environment, secrets, and machine-specific configuration
 .env

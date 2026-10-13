@@ -1,5 +1,5 @@
-import { createRateServer } from "../../interfaces/http/server.js";
-import { type RateServerConfig } from "../../interfaces/types.js";
+import { createRateServer } from "../../interfaces/http/server";
+import { type RateServerConfig } from "../../interfaces/types";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
 export class Provider {
