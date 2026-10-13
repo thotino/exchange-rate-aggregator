@@ -1,22 +1,23 @@
-import { Bulkhead } from "../infrastructure/resilience/Bulkhead.js";
-import { CircuitBreaker } from "../infrastructure/resilience/CircuitBreaker.js";
-import { ResilientClient } from "../infrastructure/resilience/ResilientClient.js";
-import { Retry } from "../infrastructure/resilience/Retry.js";
-import { Providers, type Currencies } from "../interfaces/types.js";
+import { Bulkhead } from "../infrastructure/resilience/Bulkhead";
+import { CircuitBreaker } from "../infrastructure/resilience/CircuitBreaker";
+import { LogicalOperationResilientClient } from "../infrastructure/resilience/ResilientClient";
+import { Retry } from "../infrastructure/resilience/Retry";
+import { Providers, type Currencies } from "../interfaces/types";
 
 export class ProviderA {
     readonly baseUrl: string;
-    #client: ResilientClient;
+    // TODO: implement the inversion of dependencies here
+    #client: LogicalOperationResilientClient;
     constructor(readonly url: string) {
         this.baseUrl = url;
-        this.#client = new ResilientClient(
+        this.#client = new LogicalOperationResilientClient(
             new CircuitBreaker(),
             new Bulkhead(this.constructor.name),
             new Retry(),
         );
     }
     async getRates(sourceCurrency: Currencies, targetCurrency: Currencies) {
-        const timeOut = AbortSignal.timeout(20);
+        const timeOut = AbortSignal.timeout(30_000);
         const fn = async () => {
             const response = await fetch(
                 `${this.baseUrl}/rates/${sourceCurrency}/${targetCurrency}`,
