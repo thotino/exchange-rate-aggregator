@@ -1,4 +1,5 @@
 /**
+ * @see https://redis.io/tutorials/howtos/ratelimiting/
  * @see https://oneuptime.com/blog/post/2026-01-06-nodejs-rate-limiting-no-external-services/view
  */
 
@@ -22,6 +23,7 @@ class FixedWindowRateLimiter implements RateLimiterInterface {
     #windowMS: number = 60_000;
     #maxRequests: number = 100;
     #windows: Map<string, number> = new Map();
+    // #cleanupInterval = setInterval(() => this.#cleanup(), this.#windowMS)
     constructor() {}
     #getWindowKey(identifier: string) {
         const windowStart = Math.floor(Date.now() / this.#windowMS);
@@ -37,7 +39,6 @@ class FixedWindowRateLimiter implements RateLimiterInterface {
             return { allowed: false, remaining: 0 };
         }
         this.#windows.set(key, current + 1);
-        this.#cleanup();
         return { allowed: true, remaining: this.#maxRequests - current - 1 };
     }
     #cleanup() {
@@ -55,13 +56,14 @@ class SlidingWindowLogLimiter implements RateLimiterInterface {
     #windowMS: number = 60_000;
     #maxRequests: number = 100;
     #requestLogs: Map<string, number[]> = new Map();
+    // #cleanupInterval = setInterval(() => this.#cleanup(), this.#windowMS)
     constructor() {}
     isAllowed(id: string) {
         const now = Date.now();
         const windowStart = now - this.#windowMS;
         let requests = this.#requestLogs.get(id) ?? [];
         requests = requests.filter(timestamp => timestamp > windowStart);
-        if (requests.length > this.#maxRequests) {
+        if (requests.length >= this.#maxRequests) {
             this.#requestLogs.set(id, requests);
             return {
                 allowed: false,
@@ -79,7 +81,7 @@ class SlidingWindowLogLimiter implements RateLimiterInterface {
     get maxRequests() {
         return this.#maxRequests;
     }
-    cleanup() {
+    #cleanup() {
         const now = Date.now();
         const windowStart = now - this.#windowMS;
         for (const [identifier, requests] of this.#requestLogs) {
@@ -97,6 +99,7 @@ class SlidingWindowCounterLimiter implements RateLimiterInterface {
     #windowMS: number = 60_000;
     #maxRequests: number = 100;
     #windows: Map<string, number> = new Map();
+    // #cleanupInterval = setInterval(() => this.#cleanup(), this.#windowMS)
     constructor() {}
     get maxRequests() {
         return this.#maxRequests;
@@ -126,13 +129,13 @@ class SlidingWindowCounterLimiter implements RateLimiterInterface {
             };
         }
         this.#windows.set(currentKey, currentCount + 1);
-        this.cleanup(currentWindowStart);
+        this.#cleanup(currentWindowStart);
         return {
             allowed: true,
             remaining: Math.floor(this.#maxRequests - weightedCount - 1),
         };
     }
-    cleanup(currentWindowStart: number) {
+    #cleanup(currentWindowStart: number) {
         const oldestValidWindow = currentWindowStart - this.#windowMS;
         for (const [key] of this.#windows) {
             const windowStart = key.slice(key.lastIndexOf(":") + 1);
@@ -147,6 +150,7 @@ class TokenBucketLimiter implements RateLimiterInterface {
     #bucketSize = 10;
     #refillRate = 1;
     #buckets: Map<string, Bucket> = new Map();
+    // #cleanupInterval = setInterval(() => this.#cleanup(), 30_000)
     constructor() {}
     get maxRequests() {
         return this.#bucketSize;
@@ -174,6 +178,7 @@ class TokenBucketLimiter implements RateLimiterInterface {
     isAllowed(identifier: string, tokens = 1) {
         let bucket = this.#getBucket(identifier);
         bucket = this.#refillBucket(bucket);
+        this.#buckets.set(identifier, bucket);
         if (bucket.tokens >= tokens) {
             bucket.tokens -= tokens;
             return {
@@ -190,7 +195,7 @@ class TokenBucketLimiter implements RateLimiterInterface {
             retryAfter: Math.ceil(waitTime),
         };
     }
-    cleanup(maxIdleMs = 3_600_000) {
+    #cleanup(maxIdleMs = 3_600_000) {
         const now = Date.now();
         for (const [identifier, bucket] of this.#buckets) {
             if (now - bucket.lastRefill > maxIdleMs) {
@@ -208,7 +213,7 @@ export class RateLimiter {
     };
     constructor(readonly algorithm: RateLimiterAlgorithms) {}
     get maxRequests() {
-        return this.#limiters[this.algorithm].maxRequests
+        return this.#limiters[this.algorithm].maxRequests;
     }
     isAllowed(identifier: string) {
         return this.#limiters[this.algorithm].isAllowed(identifier);

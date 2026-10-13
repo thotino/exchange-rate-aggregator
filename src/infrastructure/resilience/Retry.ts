@@ -47,7 +47,7 @@ export class Retry {
             maxDelay: 30_000,
             factor: 2,
             jitter: JitterStatuses.FULL,
-            timeout: 30_000,
+            timeout: 3_000,
         },
     ) {
         this.#maxAttempts = options.maxAttempts;
@@ -87,11 +87,17 @@ export class Retry {
             this.#initialDelay * Math.pow(this.#factor, attempt - 1),
             this.#maxDelay,
         );
+        if (this.#jitter === JitterStatuses.NONE) {
+            return delay;
+        }
         if (this.#jitter === JitterStatuses.FULL) {
             return Math.random() * delay;
         }
         if (this.#jitter === JitterStatuses.EQUAL) {
             return delay / 2 + (Math.random() * delay) / 2;
+        }
+        if (this.#jitter === JitterStatuses.DECORRELATE) {
+            return Math.min(this.#maxDelay, Math.random() * 3 * delay);
         }
         return delay;
     }
@@ -111,26 +117,21 @@ export class Retry {
         return false;
     }
     async execute<T>(
-        fn: (options: { attempt: number; signal: AbortSignal }) => Promise<T>,
+        fn: () => Promise<T>,
     ) {
-        let lastError: HTTPError;
+        let lastError;
         for (let attempt = 1; attempt <= this.#maxAttempts; attempt++) {
             const controller = new AbortController();
             try {
-                const timeoutId = setTimeout(
-                    () => controller.abort(),
-                    this.#timeout,
-                );
-                try {
-                    const result = await fn({
-                        attempt,
-                        signal: controller.signal,
-                    });
-                    clearTimeout(timeoutId);
-                    return result;
-                } finally {
-                    clearTimeout(timeoutId);
-                }
+                return await Promise.race([
+                    fn(),
+                    new Promise((_, reject) =>
+                        setTimeout(
+                            () => reject(new Error("ERR_ATTEMPT_TIMED_OUT")),
+                            this.#timeout,
+                        ),
+                    ),
+                ]);
             } catch (error) {
                 lastError = error;
                 if (error.name === "AbortError") {

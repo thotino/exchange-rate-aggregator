@@ -142,7 +142,7 @@ export class BulkheadRegistry {
     }
     get(name: string) {
         if (!this.#bulheads.has(name)) {
-            throw new Error("ERR_BULKHEAD_NOT_REGISTERED")
+            throw new Error("ERR_BULKHEAD_NOT_REGISTERED");
         }
         return this.#bulheads.get(name);
     }
