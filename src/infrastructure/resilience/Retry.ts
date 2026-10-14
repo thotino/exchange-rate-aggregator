@@ -2,6 +2,9 @@
  * @see https://oneuptime.com/blog/post/2026-01-06-nodejs-retry-exponential-backoff/view
  */
 
+import { CustomTimeoutError } from "./errors/CustomTimeoutError";
+import { InvalidRetryOptionError } from "./errors/InvalidRetryOptionError";
+
 const RETRYABLE_ERRORS = new Set([
     "ETIMEDOUT",
     "ECONNRESET",
@@ -19,20 +22,34 @@ enum JitterStatuses {
     DECORRELATE = "decorrelate",
 }
 type HTTPError = Error & {
-    code: string;
-    response: {
+    code?: string;
+    response?: {
         status: number;
-        headers: Headers;
+        headers?: Headers;
     };
 };
-interface RetryOptions {
+
+
+export interface RetryOptions {
     maxAttempts: number;
     initialDelay: number;
     maxDelay: number;
     factor: number;
     jitter: JitterStatuses;
     timeout: number;
+    retryableErrors: Set<string>;
+    retryableStatusCodes: Set<number>;
 }
+const DEFAULT_OPTIONS: RetryOptions = {
+    maxAttempts: 3,
+    initialDelay: 1000,
+    maxDelay: 30_000,
+    factor: 2,
+    jitter: JitterStatuses.FULL,
+    timeout: 3_000,
+    retryableErrors: new Set(),
+    retryableStatusCodes: new Set<number>(),
+};
 export class Retry {
     #maxAttempts: number = 5;
     #initialDelay: number = 1000;
@@ -40,32 +57,49 @@ export class Retry {
     #factor: number = 2;
     #jitter: JitterStatuses = JitterStatuses.FULL;
     #timeout: number = 30000;
-    constructor(
-        options: RetryOptions = {
-            maxAttempts: 3,
-            initialDelay: 1000,
-            maxDelay: 30_000,
-            factor: 2,
-            jitter: JitterStatuses.FULL,
-            timeout: 3_000,
-        },
-    ) {
-        this.#maxAttempts = options.maxAttempts;
-        this.#initialDelay = options.initialDelay;
-        this.#maxDelay = options.maxDelay;
-        this.#factor = options.factor;
-        this.#jitter = options.jitter;
-        this.#timeout = options.timeout;
+    #retryableErrors: Set<string> = RETRYABLE_ERRORS;
+    #retryableStatusCodes: Set<number> = RETRYABLE_STATUS_CODES;
+    constructor(options: Partial<RetryOptions>) {
+        const resolvedOptions = { ...DEFAULT_OPTIONS, ...options };
+        if (
+            !Number.isInteger(resolvedOptions.maxAttempts) ||
+            resolvedOptions.maxAttempts < 1 ||
+            !Number.isFinite(resolvedOptions.factor) ||
+            resolvedOptions.factor < 0 ||
+            !Number.isFinite(resolvedOptions.timeout) ||
+            resolvedOptions.timeout < 0 ||
+            !Number.isFinite(resolvedOptions.initialDelay) ||
+            resolvedOptions.initialDelay < 0 ||
+            !Number.isFinite(resolvedOptions.maxDelay) ||
+            resolvedOptions.maxDelay < 0
+        ) {
+            throw new InvalidRetryOptionError();
+        }
+        this.#maxAttempts = resolvedOptions.maxAttempts;
+        this.#initialDelay = resolvedOptions.initialDelay;
+        this.#maxDelay = resolvedOptions.maxDelay;
+        this.#factor = resolvedOptions.factor;
+        this.#jitter = resolvedOptions.jitter;
+        this.#timeout = resolvedOptions.timeout;
+        this.#retryableErrors = new Set([
+            ...RETRYABLE_ERRORS,
+            ...(options.retryableErrors ?? []),
+        ]);
+        this.#retryableStatusCodes = new Set([
+            ...RETRYABLE_STATUS_CODES,
+            ...(options.retryableStatusCodes ?? []),
+        ]);
     }
     #getHeader(headers: Headers, name: string) {
         if (headers == null) return null;
         return headers.get(name) ?? null;
     }
     #getRetryAfter(error: HTTPError) {
-        const retryAfter = this.#getHeader(
-            error.response.headers,
-            "retry-after",
-        );
+        const headers = error.response?.headers;
+        if (headers == null) {
+            return null;
+        }
+        const retryAfter = this.#getHeader(headers, "retry-after");
         if (retryAfter == null) return null;
         const seconds = Number(retryAfter);
         if (Number.isInteger(seconds) && seconds >= 0) {
@@ -78,64 +112,86 @@ export class Retry {
         }
         return null;
     }
-    #calculateDelay(attempt: number, error: HTTPError) {
-        const retryAfter = this.#getRetryAfter(error);
-        if (retryAfter !== null) {
-            return Math.min(retryAfter, this.#maxDelay);
-        }
-        const delay: number = Math.min(
-            this.#initialDelay * Math.pow(this.#factor, attempt - 1),
+    #calculateDelayWithJitter(
+        baseDelay: number,
+        prevDelay: number,
+        attempt: number,
+    ) {
+        const delay = Math.min(
+            baseDelay * Math.pow(this.#factor, attempt - 1),
             this.#maxDelay,
         );
-        if (this.#jitter === JitterStatuses.NONE) {
-            return delay;
+        switch (this.#jitter) {
+            case JitterStatuses.NONE:
+                return delay;
+            case JitterStatuses.FULL:
+                return Math.random() * delay;
+            case JitterStatuses.EQUAL:
+                return delay / 2 + (Math.random() * delay) / 2;
+            case JitterStatuses.DECORRELATE:
+                const upperBound = Math.max(baseDelay, prevDelay * 3);
+                return Math.min(
+                    this.#maxDelay,
+                    baseDelay + Math.random() * (upperBound - baseDelay),
+                );
+            default:
+                return delay;
         }
-        if (this.#jitter === JitterStatuses.FULL) {
-            return Math.random() * delay;
+    }
+    #calculateDelay(
+        initialDelay: number,
+        prevDelay: number,
+        attempt: number,
+        error: HTTPError,
+    ) {
+        const retryAfter = this.#getRetryAfter(error);
+        if (retryAfter != null) {
+            if (retryAfter > this.#maxDelay) {
+                return null;
+            }
+            return retryAfter;
         }
-        if (this.#jitter === JitterStatuses.EQUAL) {
-            return delay / 2 + (Math.random() * delay) / 2;
-        }
-        if (this.#jitter === JitterStatuses.DECORRELATE) {
-            return Math.min(this.#maxDelay, Math.random() * 3 * delay);
-        }
-        return delay;
+        return this.#calculateDelayWithJitter(initialDelay, prevDelay, attempt);
     }
     #isRetryable(error: HTTPError) {
-        if (RETRYABLE_ERRORS.has(error.code)) {
+        if (error.code != null && this.#retryableErrors.has(error.code)) {
             return true;
         }
         if (
-            error.response &&
-            RETRYABLE_STATUS_CODES.has(error.response.status)
+            error.response != null &&
+            this.#retryableStatusCodes.has(error.response.status)
         ) {
             return true;
         }
-        if (this.#getHeader(error.response?.headers, "retry-after")) {
+        if (
+            error.response?.status === 503 &&
+            error.response?.headers != null &&
+            this.#getHeader(error.response?.headers, "retry-after")
+        ) {
             return true;
         }
         return false;
     }
-    async execute<T>(
-        fn: () => Promise<T>,
-    ) {
+    async execute<T>(fn: (options: { signal: AbortSignal }) => Promise<T>) {
         let lastError;
+        let prevDelay = this.#initialDelay;
         for (let attempt = 1; attempt <= this.#maxAttempts; attempt++) {
             const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), this.#timeout);
             try {
-                return await Promise.race([
-                    fn(),
-                    new Promise((_, reject) =>
-                        setTimeout(
-                            () => reject(new Error("ERR_ATTEMPT_TIMED_OUT")),
-                            this.#timeout,
-                        ),
-                    ),
-                ]);
-            } catch (error) {
+                try {
+                    return await fn({ signal: controller.signal });
+                } finally {
+                    clearTimeout(timer);
+                }
+            } catch (err) {
+                let error = Retry.#ensureError(err);
                 lastError = error;
-                if (error.name === "AbortError") {
-                    throw new Error("ERR_TIMED_OUT");
+                if (
+                    error.name === "TimeoutError" ||
+                    error.name === "AbortError"
+                ) {
+                    error = new CustomTimeoutError();
                 }
                 if (
                     attempt === this.#maxAttempts ||
@@ -143,10 +199,28 @@ export class Retry {
                 ) {
                     throw error;
                 }
-                const delay = this.#calculateDelay(attempt, error);
+                const delay = this.#calculateDelay(
+                    this.#initialDelay,
+                    prevDelay,
+                    attempt,
+                    error,
+                );
+                if (delay == null) {
+                    throw error;
+                }
+                prevDelay = delay;
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
         throw lastError;
+    }
+    static #ensureError(value: unknown) {
+        if (value instanceof Error) return value;
+        let stringifiedValue = "";
+        try {
+            stringifiedValue = JSON.stringify(value);
+        } catch (error) {}
+        const error = new Error(stringifiedValue);
+        return error;
     }
 }

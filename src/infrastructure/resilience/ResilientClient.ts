@@ -8,23 +8,29 @@ class ResilientClient {
         readonly bulkHead: Bulkhead,
         readonly retry: Retry,
     ) {}
-    execute<T>(fn: () => Promise<T>) {
+    execute<T>(fn: (options: { signal: AbortSignal }) => Promise<T>) {
         throw new Error("ERR_NOT_IMPLEMENTED");
     }
 }
 
 export class LogicalOperationResilientClient extends ResilientClient {
-    execute<T>(fn: () => Promise<T>): Promise<unknown> {
+    execute<T>(
+        fn: (options: { signal: AbortSignal }) => Promise<T>,
+    ): Promise<unknown> {
         return this.circuitBreaker.execute(() =>
-            this.retry.execute(() => this.bulkHead.execute(() => fn())),
+            this.retry.execute(({ signal }) =>
+                this.bulkHead.execute(() => fn({ signal })),
+            ),
         );
     }
 }
 export class PerAttemptResilientClient extends ResilientClient {
-    execute<T>(fn: () => Promise<T>): Promise<unknown> {
-        return this.retry.execute(() =>
+    execute<T>(
+        fn: (options: { signal: AbortSignal }) => Promise<T>,
+    ): Promise<unknown> {
+        return this.retry.execute(({ signal }) =>
             this.circuitBreaker.execute(() =>
-                this.bulkHead.execute(() => fn()),
+                this.bulkHead.execute(() => fn({ signal })),
             ),
         );
     }

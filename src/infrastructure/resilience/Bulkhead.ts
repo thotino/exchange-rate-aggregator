@@ -90,7 +90,7 @@ export class Bulkhead {
             this.#permits++;
         }
     }
-    async execute<T>(fn: () => Promise<T>) {
+    async execute<T>(fn: (options: { signal: AbortSignal }) => Promise<T>) {
         await this.#acquire();
         let success = true;
         try {
