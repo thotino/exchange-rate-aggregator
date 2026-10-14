@@ -7,6 +7,7 @@
     "build": "tsc --project tsconfig.json",
     "dev": "node --env-file=.env.dev --import=tsx src/main.ts",
     "dev:inspect": "node --inspect-brk=0.0.0.0:9229 --env-file=.env.dev --import=tsx src/main.ts",
+    "dev:doctor": "clinic doctor -- node --env-file=.env.dev --import=tsx src/main.ts",
     "dev:heapprofiler": "clinic heapprofiler -- node --env-file=.env.dev --import=tsx src/main.ts",
     "prettier": "prettier --write \"src/**/*.ts\"",
     "lint": "eslint .",
@@ -29,6 +30,7 @@
   },
   "dependencies": {
     "@isaacs/ttlcache": "^2.1.5",
-    "config": "^5.0.1"
+    "config": "^5.0.1",
+    "winston": "^3.19.0"
   }
 }
