@@ -1,20 +1,13 @@
+import { ProviderError } from "../errors/ProviderError";
 import { ProviderTimeoutError } from "../errors/ProviderTimeoutError";
 import { ProviderUnavailableError } from "../errors/ProviderUnavailableError";
 import { Bulkhead } from "../infrastructure/resilience/Bulkhead";
 import { CircuitBreaker } from "../infrastructure/resilience/CircuitBreaker";
+import { RequestCoalescer } from "../infrastructure/resilience/RequestCoalescer";
 import { LogicalOperationResilientClient } from "../infrastructure/resilience/ResilientClient";
-import { Retry,  } from "../infrastructure/resilience/Retry";
+import { Retry } from "../infrastructure/resilience/Retry";
 import { Providers, type Currencies } from "../interfaces/types";
-class ProviderError extends Error {
-    code;
-    response;
-    constructor(response: Response) {
-        const message: string = response.statusText 
-        super(message)
-        this.response = response
-        this.code = response.status;
-    }
-}
+
 export class ProviderA {
     readonly baseUrl: string;
     // TODO: implement the inversion of dependencies here
@@ -31,6 +24,7 @@ export class ProviderA {
                     "PROVIDER_UNAVAILABLE",
                 ]),
             }),
+            new RequestCoalescer(),
         );
     }
     async getRates(sourceCurrency: Currencies, targetCurrency: Currencies) {
@@ -40,22 +34,23 @@ export class ProviderA {
                 { signal },
             );
             if (!response.ok) {
-                if (response.status === 500) {
-                    throw new ProviderUnavailableError();
-                }
-                if (response.status === 504) {
-                    throw new ProviderTimeoutError();
-                }
-                const error = new ProviderError(response)
+                // if (response.status === 500) {
+                //     throw new ProviderUnavailableError();
+                // }
+                // if (response.status === 504) {
+                //     throw new ProviderTimeoutError();
+                // }
+                const error = new ProviderError(response);
                 throw error;
             }
             return response.json();
         };
-        const response = await this.#client.execute(fn);
+        const coalescerKey = `GetRates::${Providers.PROVIDER_A}-${sourceCurrency}-${targetCurrency}`;
+        const rates = await this.#client.execute(coalescerKey, fn);
         return {
             from: sourceCurrency,
             to: targetCurrency,
-            rate: response.rate,
+            rate: rates.rate,
             provider: Providers.PROVIDER_A,
         };
     }
