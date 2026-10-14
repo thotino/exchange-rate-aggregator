@@ -1,9 +1,20 @@
+import { ProviderTimeoutError } from "../errors/ProviderTimeoutError";
+import { ProviderUnavailableError } from "../errors/ProviderUnavailableError";
 import { Bulkhead } from "../infrastructure/resilience/Bulkhead";
 import { CircuitBreaker } from "../infrastructure/resilience/CircuitBreaker";
 import { LogicalOperationResilientClient } from "../infrastructure/resilience/ResilientClient";
-import { Retry } from "../infrastructure/resilience/Retry";
+import { Retry,  } from "../infrastructure/resilience/Retry";
 import { Providers, type Currencies } from "../interfaces/types";
-
+class ProviderError extends Error {
+    code;
+    response;
+    constructor(response: Response) {
+        const message: string = response.statusText 
+        super(message)
+        this.response = response
+        this.code = response.status;
+    }
+}
 export class ProviderA {
     readonly baseUrl: string;
     // TODO: implement the inversion of dependencies here
@@ -13,19 +24,29 @@ export class ProviderA {
         this.#client = new LogicalOperationResilientClient(
             new CircuitBreaker(),
             new Bulkhead(this.constructor.name),
-            new Retry(),
+            new Retry({
+                maxAttempts: 3,
+                retryableErrors: new Set([
+                    "PROVIDER_TIMEOUT",
+                    "PROVIDER_UNAVAILABLE",
+                ]),
+            }),
         );
     }
     async getRates(sourceCurrency: Currencies, targetCurrency: Currencies) {
-        const timeOut = AbortSignal.timeout(30_000);
-        const fn = async () => {
+        const fn = async ({ signal }: { signal: AbortSignal }) => {
             const response = await fetch(
                 `${this.baseUrl}/rates/${sourceCurrency}/${targetCurrency}`,
-                { signal: timeOut },
+                { signal },
             );
             if (!response.ok) {
-                const error = new Error(`HTTP ${response.status}`);
-                error.response = response;
+                if (response.status === 500) {
+                    throw new ProviderUnavailableError();
+                }
+                if (response.status === 504) {
+                    throw new ProviderTimeoutError();
+                }
+                const error = new ProviderError(response)
                 throw error;
             }
             return response.json();

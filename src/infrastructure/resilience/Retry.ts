@@ -65,13 +65,13 @@ export class Retry {
             !Number.isInteger(resolvedOptions.maxAttempts) ||
             resolvedOptions.maxAttempts < 1 ||
             !Number.isFinite(resolvedOptions.factor) ||
-            resolvedOptions.factor < 0 ||
+            resolvedOptions.factor <= 0 ||
             !Number.isFinite(resolvedOptions.timeout) ||
-            resolvedOptions.timeout < 0 ||
+            resolvedOptions.timeout <= 0 ||
             !Number.isFinite(resolvedOptions.initialDelay) ||
-            resolvedOptions.initialDelay < 0 ||
+            resolvedOptions.initialDelay <= 0 ||
             !Number.isFinite(resolvedOptions.maxDelay) ||
-            resolvedOptions.maxDelay < 0
+            resolvedOptions.maxDelay <= 0
         ) {
             throw new InvalidRetryOptionError();
         }
@@ -177,7 +177,7 @@ export class Retry {
         let prevDelay = this.#initialDelay;
         for (let attempt = 1; attempt <= this.#maxAttempts; attempt++) {
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), this.#timeout);
+            const timer = setTimeout(() => controller.abort(new CustomTimeoutError()), this.#timeout);
             try {
                 try {
                     return await fn({ signal: controller.signal });
@@ -187,12 +187,6 @@ export class Retry {
             } catch (err) {
                 let error = Retry.#ensureError(err);
                 lastError = error;
-                if (
-                    error.name === "TimeoutError" ||
-                    error.name === "AbortError"
-                ) {
-                    error = new CustomTimeoutError();
-                }
                 if (
                     attempt === this.#maxAttempts ||
                     !this.#isRetryable(error)
