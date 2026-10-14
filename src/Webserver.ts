@@ -97,6 +97,7 @@ export class Webserver {
             sendJson(response, 429, {
                 error: "Too many requests",
             });
+            return;
         }
 
         const sourceCurrency = Webserver.#toCurrency(routeMatch[1]);
