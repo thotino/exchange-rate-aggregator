@@ -34,12 +34,12 @@ export class ProviderA {
                 { signal },
             );
             if (!response.ok) {
-                // if (response.status === 500) {
-                //     throw new ProviderUnavailableError();
-                // }
-                // if (response.status === 504) {
-                //     throw new ProviderTimeoutError();
-                // }
+                if (response.status === 500) {
+                    throw new ProviderUnavailableError(response);
+                }
+                if (response.status === 504) {
+                    throw new ProviderTimeoutError(response);
+                }
                 const error = new ProviderError(response);
                 throw error;
             }
