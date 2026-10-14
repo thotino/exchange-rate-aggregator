@@ -2,6 +2,10 @@
  * @see https://oneuptime.com/blog/post/2026-01-06-nodejs-retry-exponential-backoff/view#circuit-breaker-pattern
  */
 
+import { logger } from "./logger";
+
+const FAILURE_STATUS_CODES = new Set([500, 502, 503, 504]);
+const FAILURE_ERRORS = new Set(["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED"]);
 enum CircuitBreakerStates {
     CLOSED = "closed",
     OPEN = "open",
@@ -38,7 +42,7 @@ export class CircuitBreaker {
     #halfOpenAttemps = 0;
     constructor(
         options: CircuitBreakerOptions = {
-            failureThreshold: 5,
+            failureThreshold: 1,
             resetTimeout: 30_000,
             halfOpenRequests: 1,
         },
@@ -49,13 +53,14 @@ export class CircuitBreaker {
     }
 
     async execute<T>(fn: () => Promise<T>) {
+        const fnName = fn.name;
         if (this.#state === CircuitBreakerStates.OPEN) {
             if (
                 this.#lastFailure !== null &&
                 Date.now() - this.#lastFailure > this.#resetTimeout
             ) {
                 this.#state = CircuitBreakerStates.HALF_OPEN;
-                console.log("Circuit breaker: OPEN -> HALF_OPEN");
+                logger.debug("[CircuitBreaker]: OPEN -> HALF_OPEN");
                 this.#halfOpenAttemps = 0;
             } else {
                 throw new CircuitBreakerOpenError();
@@ -75,7 +80,10 @@ export class CircuitBreaker {
             this.#onSuccess();
             return result;
         } catch (error) {
-            this.#onFailure();
+            logger.error("[CircuitBreaker]", { error });
+            if (CircuitBreaker.#isFailure(error)) {
+                this.#onFailure();
+            }
             throw error;
         }
     }
@@ -85,7 +93,7 @@ export class CircuitBreaker {
             this.#successes++;
             if (this.#successes >= this.#halfOpenRequests) {
                 this.#state = CircuitBreakerStates.CLOSED;
-                console.log("Circuit breaker: HALF_OPEN -> CLOSED");
+                logger.debug("[CircuitBreaker]: HALF_OPEN -> CLOSED");
                 this.#failures = 0;
                 this.#successes = 0;
             }
@@ -93,17 +101,28 @@ export class CircuitBreaker {
             this.#failures = 0;
         }
     }
+    static #isFailure(error: unknown) {
+        if (
+            error.code != null ||
+            error.status != null ||
+            FAILURE_STATUS_CODES.has(error.code ?? error.status) ||
+            FAILURE_ERRORS.has(error.code ?? error.status)
+        ) {
+            return true;
+        }
+        return false;
+    }
 
     #onFailure() {
         this.#failures++;
         this.#lastFailure = Date.now();
         if (this.#state === CircuitBreakerStates.HALF_OPEN) {
             this.#state = CircuitBreakerStates.OPEN;
-            console.log("Circuit breaker: HALF OPEN -> OPEN");
+            logger.debug("[CircuitBreaker]: HALF OPEN -> OPEN");
             this.#successes = 0;
         } else if (this.#failures >= this.#failureThreshold) {
             this.#state = CircuitBreakerStates.OPEN;
-            console.log("Circuit breaker: CLOSED -> OPEN");
+            logger.debug("[CircuitBreaker]: CLOSED -> OPEN");
         }
     }
 
