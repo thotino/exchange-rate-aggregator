@@ -7,8 +7,9 @@ import { RequestCoalescer } from "../infrastructure/resilience/RequestCoalescer"
 import { LogicalOperationResilientClient } from "../infrastructure/resilience/ResilientClient";
 import { Retry } from "../infrastructure/resilience/Retry";
 import { Providers, type Currencies } from "../interfaces/types";
+import type { BaseConnectorInterface } from "./connector";
 
-export class ProviderB {
+export class ProviderB implements BaseConnectorInterface {
     readonly baseUrl: string;
     #client: LogicalOperationResilientClient;
     constructor(readonly url: string) {
@@ -25,6 +26,8 @@ export class ProviderB {
             new RequestCoalescer(),
         );
     }
+    async connect() {}
+    async close() {}
     async getRates(sourceCurrency: Currencies, targetCurrency: Currencies) {
         const fn = async ({ signal }: { signal: AbortSignal }) => {
             const response = await fetch(
@@ -50,6 +53,7 @@ export class ProviderB {
             to: targetCurrency,
             rate: rates.rate,
             provider: Providers.PROVIDER_B,
+            fetchedAt: new Date(),
         };
     }
 }

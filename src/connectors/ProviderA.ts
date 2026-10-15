@@ -7,8 +7,9 @@ import { RequestCoalescer } from "../infrastructure/resilience/RequestCoalescer"
 import { LogicalOperationResilientClient } from "../infrastructure/resilience/ResilientClient";
 import { Retry } from "../infrastructure/resilience/Retry";
 import { Providers, type Currencies } from "../interfaces/types";
+import type { BaseConnectorInterface } from "./connector";
 
-export class ProviderA {
+export class ProviderA implements BaseConnectorInterface {
     readonly baseUrl: string;
     // TODO: implement the inversion of dependencies here
     #client: LogicalOperationResilientClient;
@@ -26,6 +27,12 @@ export class ProviderA {
             }),
             new RequestCoalescer(),
         );
+    }
+    async connect() {
+        await this.#client.connect();
+    }
+    async close() {
+        await this.#client.close();
     }
     async getRates(sourceCurrency: Currencies, targetCurrency: Currencies) {
         const fn = async ({ signal }: { signal: AbortSignal }) => {
@@ -52,6 +59,7 @@ export class ProviderA {
             to: targetCurrency,
             rate: rates.rate,
             provider: Providers.PROVIDER_A,
+            fetchedAt: new Date(),
         };
     }
 }
