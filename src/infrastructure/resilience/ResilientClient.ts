@@ -3,7 +3,7 @@ import type { CircuitBreaker } from "./CircuitBreaker";
 import type { RequestCoalescer } from "./RequestCoalescer";
 import type { Retry } from "./Retry";
 
-class ResilientClient {
+abstract class ResilientClient {
     constructor(
         readonly circuitBreaker: CircuitBreaker,
         readonly bulkHead: Bulkhead,
@@ -11,19 +11,18 @@ class ResilientClient {
         readonly requestCoalescer: RequestCoalescer,
     ) {}
     async connect() {
-        await this.bulkHead.connect();
-        await this.circuitBreaker.connect();
+        await Promise.all([
+            this.bulkHead.connect(),
+            this.circuitBreaker.connect(),
+        ]);
     }
     async close() {
-        await this.circuitBreaker.close();
-        await this.bulkHead.close();
+        await Promise.all([this.circuitBreaker.close(), this.bulkHead.close()]);
     }
-    execute<T>(
+    abstract execute<T>(
         key: string,
         fn: (options: { signal: AbortSignal }) => Promise<T>,
-    ) {
-        throw new Error("ERR_NOT_IMPLEMENTED");
-    }
+    ): Promise<T>
 }
 
 export class LogicalOperationResilientClient extends ResilientClient {
