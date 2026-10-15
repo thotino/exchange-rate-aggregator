@@ -6,6 +6,7 @@ type Rate = {
     to: Currencies;
     rate: number;
     provider: Providers;
+    fetchedAt: Date;
 };
 interface RateProvider {
     baseUrl: string;
