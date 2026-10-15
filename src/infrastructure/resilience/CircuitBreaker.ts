@@ -40,6 +40,7 @@ export class CircuitBreaker {
     #successes = 0;
     #lastFailure: number | null = null;
     #halfOpenAttemps = 0;
+    #stateInterval: NodeJS.Timeout | null = null;
     constructor(
         options: CircuitBreakerOptions = {
             failureThreshold: 1,
@@ -50,6 +51,19 @@ export class CircuitBreaker {
         this.#failureThreshold = options.failureThreshold;
         this.#resetTimeout = options.resetTimeout;
         this.#halfOpenRequests = options.halfOpenRequests;
+    }
+    async connect() {
+        if (this.#stateInterval == null) {
+            this.#stateInterval = setInterval(() => {
+                logger.debug("[CircuitBreaker]:: Metrics %o", this.getState());
+            });
+        }
+    }
+    async close() {
+        if (this.#stateInterval != null) {
+            clearInterval(this.#stateInterval);
+            this.#stateInterval = null;
+        }
     }
 
     async execute<T>(fn: () => Promise<T>) {

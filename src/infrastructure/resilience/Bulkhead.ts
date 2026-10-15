@@ -2,6 +2,8 @@
  * @see https://oneuptime.com/blog/post/2026-01-24-bulkhead-pattern-nodejs/view
  */
 
+import { logger } from "./logger";
+
 interface BulkheadOptions {
     readonly maxConcurrent: number;
     readonly maxWaiting: number;
@@ -14,12 +16,22 @@ interface BulkheadMetrics {
     completed: number;
     failed: number;
 }
+class InvalidBulkheadOptionsError extends Error {
+    readonly code: string = "INVALID BULKHEAD_OPTION";
+    /**
+     *
+     */
+    constructor() {
+        const message: string = "One or several options are invalid";
+        super(message);
+    }
+}
 export class Bulkhead {
     #name: string;
     #maxConcurrent: number = 10;
     #permits: number = 1;
     #maxWaiting: number = 20;
-    #timeoutMS: number = 10_000;
+    #waitTimeoutMS: number = 10_000;
     #waitQueue: {
         resolve: () => void;
         reject: (error: Error) => void;
@@ -32,6 +44,7 @@ export class Bulkhead {
         completed: 0,
         failed: 0,
     };
+    #metricsInterval: NodeJS.Timeout | null = null;
     constructor(
         name: string,
         config: BulkheadOptions = {
@@ -41,10 +54,20 @@ export class Bulkhead {
         },
     ) {
         this.#name = name;
-        this.#maxConcurrent = config.maxConcurrent ?? 10;
-        this.#permits = config.maxConcurrent ?? 1;
-        this.#maxWaiting = config.maxWaiting ?? 20;
-        this.#timeoutMS = config.timeoutMS ?? 10_000;
+        if (
+            !Number.isInteger(config.maxConcurrent) ||
+            config.maxConcurrent <= 0 ||
+            !Number.isInteger(config.maxWaiting) ||
+            config.maxWaiting < 0 ||
+            !Number.isFinite(config.timeoutMS) ||
+            config.timeoutMS <= 0
+        ) {
+            throw new InvalidBulkheadOptionsError();
+        }
+        this.#maxConcurrent = config.maxConcurrent;
+        this.#permits = config.maxConcurrent;
+        this.#maxWaiting = config.maxWaiting;
+        this.#waitTimeoutMS = config.timeoutMS;
     }
 
     async #acquire() {
@@ -70,8 +93,10 @@ export class Bulkhead {
                     this.#waitQueue.splice(index, 1);
                 }
                 this.#metrics.timedOut++;
-                reject(new BulkheadTimeoutError(this.#name, this.#timeoutMS));
-            }, this.#timeoutMS);
+                reject(
+                    new BulkheadTimeoutError(this.#name, this.#waitTimeoutMS),
+                );
+            }, this.#waitTimeoutMS);
             this.#waitQueue.push({ resolve, reject, timer });
         });
     }
@@ -90,7 +115,20 @@ export class Bulkhead {
             this.#permits++;
         }
     }
-    async execute<T>(fn: (options: { signal: AbortSignal }) => Promise<T>) {
+    async connect() {
+        if (this.#metricsInterval == null) {
+            this.#metricsInterval = setInterval(() => {
+                logger.debug("[BulkHead]:: Metrics", this.getMetrics());
+            }, 10_000);
+        }
+    }
+    async close() {
+        if (this.#metricsInterval != null) {
+            clearInterval(this.#metricsInterval);
+            this.#metricsInterval = null;
+        }
+    }
+    async execute<T>(fn: () => Promise<T>) {
         await this.#acquire();
         let success = true;
         try {
@@ -137,6 +175,7 @@ export class BulkheadRegistry {
             throw new Error("ERR_BULKHEAD_ALREADY_REGISTERED");
         }
         const bulkhead = new Bulkhead(name, config);
+        bulkhead.connect();
         this.#bulheads.set(name, bulkhead);
         return bulkhead;
     }
@@ -154,6 +193,9 @@ export class BulkheadRegistry {
         return metrics;
     }
     reset() {
+        for (const [name, bulkhead] of this.#bulheads) {
+            bulkhead.close();
+        }
         this.#bulheads.clear();
     }
 }

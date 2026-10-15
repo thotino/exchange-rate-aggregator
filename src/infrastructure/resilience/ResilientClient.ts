@@ -10,6 +10,14 @@ class ResilientClient {
         readonly retry: Retry,
         readonly requestCoalescer: RequestCoalescer,
     ) {}
+    async connect() {
+        await this.bulkHead.connect();
+        await this.circuitBreaker.connect();
+    }
+    async close() {
+        await this.circuitBreaker.close();
+        await this.bulkHead.close();
+    }
     execute<T>(
         key: string,
         fn: (options: { signal: AbortSignal }) => Promise<T>,
