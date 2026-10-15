@@ -55,8 +55,8 @@ export class CircuitBreaker {
     async connect() {
         if (this.#stateInterval == null) {
             this.#stateInterval = setInterval(() => {
-                logger.debug("[CircuitBreaker]:: Metrics %o", this.getState());
-            });
+                logger.debug("[CircuitBreaker]:: Metrics", this.getState());
+            }, 10_000);
         }
     }
     async close() {

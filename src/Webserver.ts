@@ -29,6 +29,7 @@ export class Webserver {
     }
 
     async start(): Promise<number> {
+        this.#rateLimiter.connect()
         await new Promise<void>((resolve, reject) => {
             const onError = (error: Error) => {
                 this.#server.off("listening", onListening);
@@ -49,6 +50,7 @@ export class Webserver {
     }
 
     async stop(): Promise<void> {
+        this.#rateLimiter.close()
         if (!this.#server.listening) {
             return;
         }
@@ -87,13 +89,16 @@ export class Webserver {
             sendJson(response, 400, { error: "Unabe to identify user" });
             return;
         }
-        const limiterOutcome = this.#rateLimiter.isAllowed(ip);
+        const limiterOutcome = this.#rateLimiter.attempt(ip);
         const headers = new Headers({
             "X-RateLimit-Limit": `${this.#rateLimiter.maxRequests}`,
             "X-RateLimit-Remaining": `${limiterOutcome.remaining}`,
         });
         response.setHeaders(headers);
         if (!limiterOutcome.allowed) {
+            if(limiterOutcome.retryAfter != null) {
+                response.setHeader("Retry-After", limiterOutcome.retryAfter)
+            }
             sendJson(response, 429, {
                 error: "Too many requests",
             });

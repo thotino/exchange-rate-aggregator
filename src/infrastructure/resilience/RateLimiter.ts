@@ -3,19 +3,24 @@
  * @see https://oneuptime.com/blog/post/2026-01-06-nodejs-rate-limiting-no-external-services/view
  */
 
+interface RateLimitResult {
+    allowed: boolean;
+    remaining: number;
+    retryAfter?: number;
+    resetAt?: number;
+    currentCount?: number;
+}
+
 interface RateLimiterInterface {
     get maxRequests(): number;
-    isAllowed: (id: string) => {
-        allowed: boolean;
-        remaining: number;
-        retryAfter?: number;
-        resetAt?: number;
-        currentCount?: number;
-    };
+    attempt: (id: string, tokens?: number) => RateLimitResult;
+    connect: () => void;
+    close: () => void;
 }
 export enum RateLimiterAlgorithms {
     FIXED_WINDOW = "fixed-window",
     SLIDING_WINDOW = "sliding-window",
+    SLIDING_WINDOW_COUNTER = "sliding-window-counter",
     TOKEN_BUCKET = "token-bucket",
 }
 
@@ -23,8 +28,22 @@ class FixedWindowRateLimiter implements RateLimiterInterface {
     #windowMS: number = 60_000;
     #maxRequests: number = 100;
     #windows: Map<string, number> = new Map();
-    // #cleanupInterval = setInterval(() => this.#cleanup(), this.#windowMS)
+    #cleanupInterval: NodeJS.Timeout | null = null;
     constructor() {}
+    async connect() {
+        if (this.#cleanupInterval == null) {
+            this.#cleanupInterval = setInterval(
+                () => this.#cleanup(),
+                this.#windowMS,
+            );
+        }
+    }
+    async close() {
+        if (this.#cleanupInterval != null) {
+            clearInterval(this.#cleanupInterval);
+            this.#cleanupInterval = null;
+        }
+    }
     #getWindowKey(identifier: string) {
         const windowStart = Math.floor(Date.now() / this.#windowMS);
         return `${identifier}:${windowStart}`;
@@ -32,7 +51,7 @@ class FixedWindowRateLimiter implements RateLimiterInterface {
     get maxRequests() {
         return this.#maxRequests;
     }
-    isAllowed(id: string) {
+    attempt(id: string) {
         const key = this.#getWindowKey(id);
         const current = this.#windows.get(key) ?? 0;
         if (current >= this.#maxRequests) {
@@ -56,9 +75,23 @@ class SlidingWindowLogLimiter implements RateLimiterInterface {
     #windowMS: number = 60_000;
     #maxRequests: number = 100;
     #requestLogs: Map<string, number[]> = new Map();
-    // #cleanupInterval = setInterval(() => this.#cleanup(), this.#windowMS)
+    #cleanupInterval: NodeJS.Timeout | null = null;
     constructor() {}
-    isAllowed(id: string) {
+    connect() {
+        if (this.#cleanupInterval == null) {
+            this.#cleanupInterval = setInterval(
+                () => this.#cleanup(),
+                this.#windowMS,
+            );
+        }
+    }
+    close() {
+        if (this.#cleanupInterval != null) {
+            clearInterval(this.#cleanupInterval);
+            this.#cleanupInterval = null;
+        }
+    }
+    attempt(id: string) {
         const now = Date.now();
         const windowStart = now - this.#windowMS;
         let requests = this.#requestLogs.get(id) ?? [];
@@ -99,12 +132,27 @@ class SlidingWindowCounterLimiter implements RateLimiterInterface {
     #windowMS: number = 60_000;
     #maxRequests: number = 100;
     #windows: Map<string, number> = new Map();
+    // #cleanupInterval: NodeJS.Timeout | null = null;
     // #cleanupInterval = setInterval(() => this.#cleanup(), this.#windowMS)
     constructor() {}
+    connect() {
+        // if (this.#cleanupInterval == null) {
+        //     this.#cleanupInterval = setInterval(
+        //         () => this.#cleanup(),
+        //         this.#windowMS,
+        //     );
+        // }
+    }
+    close() {
+        // if (this.#cleanupInterval != null) {
+        //     clearInterval(this.#cleanupInterval);
+        //     this.#cleanupInterval = null;
+        // }
+    }
     get maxRequests() {
         return this.#maxRequests;
     }
-    isAllowed(id: string) {
+    attempt(id: string) {
         const now = Date.now();
         const currentWindowStart =
             Math.floor(now / this.#windowMS) * this.#windowMS;
@@ -150,8 +198,19 @@ class TokenBucketLimiter implements RateLimiterInterface {
     #bucketSize = 10;
     #refillRate = 1;
     #buckets: Map<string, Bucket> = new Map();
-    // #cleanupInterval = setInterval(() => this.#cleanup(), 30_000)
+    #cleanupInterval: NodeJS.Timeout | null = null;
     constructor() {}
+    connect() {
+        if (this.#cleanupInterval == null) {
+            this.#cleanupInterval = setInterval(() => this.#cleanup(), 30_000);
+        }
+    }
+    close() {
+        if (this.#cleanupInterval != null) {
+            clearInterval(this.#cleanupInterval);
+            this.#cleanupInterval = null;
+        }
+    }
     get maxRequests() {
         return this.#bucketSize;
     }
@@ -175,7 +234,14 @@ class TokenBucketLimiter implements RateLimiterInterface {
             lastRefill: now,
         };
     }
-    isAllowed(identifier: string, tokens = 1) {
+    attempt(identifier: string, tokens: number = 1) {
+        if (
+            !Number.isInteger(tokens) ||
+            tokens < 0 ||
+            tokens > this.#bucketSize
+        ) {
+            throw new Error("ERR_INVALID_TOKENS_NUMBER");
+        }
         let bucket = this.#getBucket(identifier);
         bucket = this.#refillBucket(bucket);
         this.#buckets.set(identifier, bucket);
@@ -209,13 +275,21 @@ export class RateLimiter {
     #limiters: Record<RateLimiterAlgorithms, RateLimiterInterface> = {
         [RateLimiterAlgorithms.FIXED_WINDOW]: new FixedWindowRateLimiter(),
         [RateLimiterAlgorithms.SLIDING_WINDOW]: new SlidingWindowLogLimiter(),
+        [RateLimiterAlgorithms.SLIDING_WINDOW_COUNTER]:
+            new SlidingWindowCounterLimiter(),
         [RateLimiterAlgorithms.TOKEN_BUCKET]: new TokenBucketLimiter(),
     };
     constructor(readonly algorithm: RateLimiterAlgorithms) {}
     get maxRequests() {
         return this.#limiters[this.algorithm].maxRequests;
     }
-    isAllowed(identifier: string) {
-        return this.#limiters[this.algorithm].isAllowed(identifier);
+    connect() {
+        this.#limiters[this.algorithm].connect();
+    }
+    close() {
+        this.#limiters[this.algorithm].close();
+    }
+    attempt(identifier: string) {
+        return this.#limiters[this.algorithm].attempt(identifier);
     }
 }
