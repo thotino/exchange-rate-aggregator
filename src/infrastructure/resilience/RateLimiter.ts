@@ -133,7 +133,6 @@ class SlidingWindowCounterLimiter implements RateLimiterInterface {
     #maxRequests: number = 100;
     #windows: Map<string, number> = new Map();
     // #cleanupInterval: NodeJS.Timeout | null = null;
-    // #cleanupInterval = setInterval(() => this.#cleanup(), this.#windowMS)
     constructor() {}
     connect() {
         // if (this.#cleanupInterval == null) {
@@ -237,7 +236,7 @@ class TokenBucketLimiter implements RateLimiterInterface {
     attempt(identifier: string, tokens: number = 1) {
         if (
             !Number.isInteger(tokens) ||
-            tokens < 0 ||
+            tokens <= 0 ||
             tokens > this.#bucketSize
         ) {
             throw new Error("ERR_INVALID_TOKENS_NUMBER");

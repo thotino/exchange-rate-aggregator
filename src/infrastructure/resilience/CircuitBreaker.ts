@@ -67,7 +67,6 @@ export class CircuitBreaker {
     }
 
     async execute<T>(fn: () => Promise<T>) {
-        const fnName = fn.name;
         if (this.#state === CircuitBreakerStates.OPEN) {
             if (
                 this.#lastFailure !== null &&
@@ -117,10 +116,9 @@ export class CircuitBreaker {
     }
     static #isFailure(error: unknown) {
         if (
-            error.code != null ||
-            error.status != null ||
-            FAILURE_STATUS_CODES.has(error.code ?? error.status) ||
-            FAILURE_ERRORS.has(error.code ?? error.status)
+            (error.code != null || error.status != null) &&
+            (FAILURE_STATUS_CODES.has(error.code ?? error.status) ||
+                FAILURE_ERRORS.has(error.code ?? error.status))
         ) {
             return true;
         }

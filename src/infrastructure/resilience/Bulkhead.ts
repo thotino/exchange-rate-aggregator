@@ -2,6 +2,8 @@
  * @see https://oneuptime.com/blog/post/2026-01-24-bulkhead-pattern-nodejs/view
  */
 
+import { BulkheadAcquisitionAbortedError } from "./errors/BulkheadAcquisitionAbortedError";
+import { InvalidBulkheadOptionsError } from "./errors/InvalidBulkheadOptionsError";
 import { logger } from "./logger";
 
 interface BulkheadOptions {
@@ -16,27 +18,21 @@ interface BulkheadMetrics {
     completed: number;
     failed: number;
 }
-class InvalidBulkheadOptionsError extends Error {
-    readonly code: string = "INVALID BULKHEAD_OPTION";
-    /**
-     *
-     */
-    constructor() {
-        const message: string = "One or several options are invalid";
-        super(message);
-    }
-}
+
+type Waiter = {
+    resolve: () => void;
+    reject: (error: Error) => void;
+    timer: NodeJS.Timeout;
+    cancelSignal: AbortSignal;
+    onAbort: () => void;
+};
 export class Bulkhead {
     #name: string;
     #maxConcurrent: number = 10;
     #permits: number = 1;
     #maxWaiting: number = 20;
     #waitTimeoutMS: number = 10_000;
-    #waitQueue: {
-        resolve: () => void;
-        reject: (error: Error) => void;
-        timer: NodeJS.Timeout;
-    }[] = [];
+    #waitQueue: Waiter[] = [];
     #metrics: BulkheadMetrics = {
         acquired: 0,
         rejected: 0,
@@ -70,7 +66,7 @@ export class Bulkhead {
         this.#waitTimeoutMS = config.timeoutMS;
     }
 
-    async #acquire() {
+    async #acquire({ cancelSignal }: { cancelSignal: AbortSignal }) {
         if (this.#permits > 0) {
             this.#permits--;
             this.#metrics.acquired++;
@@ -85,20 +81,39 @@ export class Bulkhead {
             );
         }
         return new Promise<void>((resolve, reject) => {
-            const timer = setTimeout(() => {
-                const index = this.#waitQueue.findIndex(
-                    wait => wait.timer === timer,
+            let waiter: Waiter;
+            const onAbort = () => {
+                if (!this.#removeWaiter(waiter)) return;
+                this.#cleanupWaiter(waiter);
+                const reason = cancelSignal.reason;
+                reject(
+                    reason instanceof Error
+                        ? reason
+                        : new BulkheadAcquisitionAbortedError(),
                 );
-                if (index !== -1) {
-                    this.#waitQueue.splice(index, 1);
-                }
+            };
+            const timer = setTimeout(() => {
+                if (!this.#removeWaiter(waiter)) return;
+                this.#cleanupWaiter(waiter);
                 this.#metrics.timedOut++;
                 reject(
                     new BulkheadTimeoutError(this.#name, this.#waitTimeoutMS),
                 );
             }, this.#waitTimeoutMS);
-            this.#waitQueue.push({ resolve, reject, timer });
+            waiter = { resolve, reject, timer, cancelSignal, onAbort };
+            this.#waitQueue.push(waiter);
+            cancelSignal.addEventListener("abort", onAbort, { once: true });
         });
+    }
+    #removeWaiter(waiter: Waiter) {
+        const index = this.#waitQueue.indexOf(waiter);
+        if (index === -1) return false;
+        this.#waitQueue.splice(index, 1);
+        return true;
+    }
+    #cleanupWaiter(waiter: Waiter) {
+        clearTimeout(waiter.timer);
+        waiter.cancelSignal.removeEventListener("abort", waiter.onAbort);
     }
     #release(success: boolean = true) {
         if (success) {
@@ -108,7 +123,7 @@ export class Bulkhead {
         }
         if (this.#waitQueue.length > 0) {
             const next = this.#waitQueue.shift()!;
-            clearTimeout(next.timer);
+            this.#cleanupWaiter(next);
             this.#metrics.acquired++;
             next.resolve();
         } else {
@@ -128,11 +143,17 @@ export class Bulkhead {
             this.#metricsInterval = null;
         }
     }
-    async execute<T>(fn: () => Promise<T>) {
-        await this.#acquire();
+    async execute<T>(
+        fn: (options: { signal: AbortSignal }) => Promise<T>,
+        options: { cancelSignal: AbortSignal },
+    ) {
+        if (options.cancelSignal.aborted) {
+            throw new Error("ERR_GET_RATES_OPERATION_TIMED_OUT");
+        }
+        await this.#acquire({ cancelSignal: options.cancelSignal });
         let success = true;
         try {
-            return await fn();
+            return await fn({ signal: options.cancelSignal });
         } catch (error) {
             success = false;
             throw error;
