@@ -2,6 +2,8 @@
  * @see https://oneuptime.com/blog/post/2026-01-06-nodejs-retry-exponential-backoff/view#circuit-breaker-pattern
  */
 
+import { CircuitBreakerHalfOpenError } from "./errors/CircuitBreakerHalfOpenError";
+import { CircuitBreakerOpenError } from "./errors/CircuitBreakerOpenError";
 import { logger } from "./logger";
 
 const FAILURE_STATUS_CODES = new Set([500, 502, 503, 504]);
@@ -16,21 +18,7 @@ interface CircuitBreakerOptions {
     resetTimeout: number;
     halfOpenRequests: number;
 }
-class CircuitBreakerOpenError extends Error {
-    code: string = "ERR_CIRCUIT_BREAKER_OPEN";
-    constructor() {
-        const message: string = "Circuit breaker is open";
-        super(message);
-    }
-}
-class CircuitBreakerHalfOpenError extends Error {
-    code: string = "ERR_CIRCUIT_BREAKER_HALF_OPEN";
-    constructor() {
-        const message: string =
-            "Circuit breaker is half open, waiting for test requests";
-        super(message);
-    }
-}
+
 export class CircuitBreaker {
     #failureThreshold = 1;
     #resetTimeout = 30_000;
