@@ -22,18 +22,25 @@ abstract class ResilientClient {
     abstract execute<T>(
         key: string,
         fn: (options: { signal: AbortSignal }) => Promise<T>,
-    ): Promise<T>
+        options: { cancelSignal: AbortSignal },
+    ): Promise<T>;
 }
 
 export class LogicalOperationResilientClient extends ResilientClient {
     execute<T>(
         key: string,
         fn: (options: { signal: AbortSignal }) => Promise<T>,
+        options: { cancelSignal: AbortSignal },
     ) {
         return this.requestCoalescer.get(key, () =>
             this.circuitBreaker.execute(() =>
-                this.retry.execute(({ signal }) =>
-                    this.bulkHead.execute(() => fn({ signal })),
+                this.retry.execute(
+                    ({ signal }) => {
+                        return this.bulkHead.execute(() => fn({ signal }), {
+                            cancelSignal: options.cancelSignal,
+                        });
+                    },
+                    { cancelSignal: options.cancelSignal },
                 ),
             ),
         );
@@ -43,12 +50,18 @@ export class PerAttemptResilientClient extends ResilientClient {
     execute<T>(
         key: string,
         fn: (options: { signal: AbortSignal }) => Promise<T>,
+        options: { cancelSignal: AbortSignal },
     ) {
         return this.requestCoalescer.get(key, () =>
-            this.retry.execute(({ signal }) =>
-                this.circuitBreaker.execute(() =>
-                    this.bulkHead.execute(() => fn({ signal })),
-                ),
+            this.retry.execute(
+                ({ signal }) => {
+                    return this.circuitBreaker.execute(() =>
+                        this.bulkHead.execute(() => fn({ signal }), {
+                            cancelSignal: options.cancelSignal,
+                        }),
+                    );
+                },
+                { cancelSignal: options.cancelSignal },
             ),
         );
     }

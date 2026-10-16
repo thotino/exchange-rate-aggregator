@@ -4,7 +4,7 @@
 
 import { CustomTimeoutError } from "./errors/CustomTimeoutError";
 import { InvalidRetryOptionError } from "./errors/InvalidRetryOptionError";
-
+import { setTimeout as setTimeoutPromise } from "node:timers/promises";
 const RETRYABLE_ERRORS = new Set([
     "ETIMEDOUT",
     "ECONNRESET",
@@ -28,7 +28,6 @@ type HTTPError = Error & {
         headers?: Headers;
     };
 };
-
 
 export interface RetryOptions {
     maxAttempts: number;
@@ -172,15 +171,29 @@ export class Retry {
         }
         return false;
     }
-    async execute<T>(fn: (options: { signal: AbortSignal }) => Promise<T>) {
+    async execute<T>(
+        fn: (options: { signal: AbortSignal }) => Promise<T>,
+        options: { cancelSignal: AbortSignal },
+    ) {
         let lastError;
         let prevDelay = this.#initialDelay;
         for (let attempt = 1; attempt <= this.#maxAttempts; attempt++) {
+            if (options.cancelSignal.aborted) {
+                throw new Error("ERR_GET_RATES_OPERATION_TIMED_OUT");
+            }
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(new CustomTimeoutError()), this.#timeout);
+            const timer = setTimeout(
+                () => controller.abort(new CustomTimeoutError()),
+                this.#timeout,
+            );
             try {
                 try {
-                    return await fn({ signal: controller.signal });
+                    return await fn({
+                        signal: AbortSignal.any([
+                            controller.signal,
+                            options.cancelSignal,
+                        ]),
+                    });
                 } finally {
                     clearTimeout(timer);
                 }
@@ -203,7 +216,10 @@ export class Retry {
                     throw error;
                 }
                 prevDelay = delay;
-                await new Promise(resolve => setTimeout(resolve, delay));
+                await setTimeoutPromise(delay, null, {
+                    signal: options.cancelSignal,
+                });
+                // await new Promise((resolve, reject) => setTimeout(resolve, delay));
             }
         }
         throw lastError;

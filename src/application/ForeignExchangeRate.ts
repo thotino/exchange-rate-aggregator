@@ -1,3 +1,4 @@
+import type { GetRatesOptions } from "../connectors/connector";
 import { exchangeRateCache } from "../infrastructure/cache/ExchangeRateCache";
 import type { Currencies, Providers } from "../interfaces/types";
 
@@ -13,49 +14,53 @@ interface RateProvider {
     getRates: (
         sourceCurrency: Currencies,
         targetCurrency: Currencies,
+        options: GetRatesOptions,
     ) => Promise<Rate>;
 }
-function withCache(
-    originalMethod: Function,
-    _context: ClassMethodDecoratorContext,
-) {
-    return async function (this: any, ...args: unknown[]) {
-        const key = args.join("-");
-        if (!exchangeRateCache.has(key)) {
-            const result = originalMethod.call(this, ...args);
-            await exchangeRateCache.set(key, result);
-        }
-        return exchangeRateCache.get(key);
-    };
-}
+
 export class ForeignExchangeRate {
+    static getRateOperationTimeout: number = 20_000;
     constructor(
         readonly providerA: RateProvider,
         readonly providerB: RateProvider,
     ) {}
     async get(sourceCurrency: Currencies, targetCurrency: Currencies) {
         const cacheKey = `FXRate::${sourceCurrency}::${targetCurrency}`;
-        if (exchangeRateCache.has(cacheKey))
+        if (exchangeRateCache.has(cacheKey)) {
             return exchangeRateCache.get(cacheKey);
+        }
+        const globalController = new AbortController();
+        const globalTimer = setTimeout(() => {
+            globalController.abort(new Error("ERR_GET_RATES_OPERATION_TIMED_OUT"));
+        }, ForeignExchangeRate.getRateOperationTimeout);
         try {
             const ratesA = await this.providerA.getRates(
                 sourceCurrency,
                 targetCurrency,
+                { cancelSignal: globalController.signal },
             );
             exchangeRateCache.set(cacheKey, ratesA);
             return ratesA;
         } catch (error) {
             console.error({ error });
+            if (globalController.signal.aborted) {
+                throw globalController.signal.reason ?? error
+            }
             try {
                 const ratesB = await this.providerB.getRates(
                     sourceCurrency,
                     targetCurrency,
+                    { cancelSignal: globalController.signal },
                 );
                 exchangeRateCache.set(cacheKey, ratesB);
                 return ratesB;
             } catch (error) {
                 console.error({ error });
-                throw error
+                throw error;
+            }
+        } finally {
+            if (globalTimer != null) {
+                clearTimeout(globalTimer);
             }
         }
     }

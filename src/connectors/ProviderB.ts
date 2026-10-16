@@ -7,7 +7,7 @@ import { RequestCoalescer } from "../infrastructure/resilience/RequestCoalescer"
 import { LogicalOperationResilientClient } from "../infrastructure/resilience/ResilientClient";
 import { Retry } from "../infrastructure/resilience/Retry";
 import { Providers, type Currencies } from "../interfaces/types";
-import type { BaseConnectorInterface } from "./connector";
+import type { BaseConnectorInterface, GetRatesOptions } from "./connector";
 
 export class ProviderB implements BaseConnectorInterface {
     readonly baseUrl: string;
@@ -26,13 +26,21 @@ export class ProviderB implements BaseConnectorInterface {
             new RequestCoalescer(),
         );
     }
-    async connect() {}
-    async close() {}
-    async getRates(sourceCurrency: Currencies, targetCurrency: Currencies) {
-        const fn = async ({ signal }: { signal: AbortSignal }) => {
+    async connect() {
+        await this.#client.connect()
+    }
+    async close() {
+        await this.#client.close()
+    }
+    async getRates(
+        sourceCurrency: Currencies,
+        targetCurrency: Currencies,
+        options: GetRatesOptions,
+    ) {
+        const fn = async () => {
             const response = await fetch(
                 `${this.baseUrl}/rates/${sourceCurrency}/${targetCurrency}`,
-                { signal },
+                { signal: AbortSignal.any([options.cancelSignal]) },
             );
             if (!response.ok) {
                 if (response.status === 500) {
@@ -47,7 +55,9 @@ export class ProviderB implements BaseConnectorInterface {
             return response.json();
         };
         const coalescerKey = `GetRates::${Providers.PROVIDER_B}-${sourceCurrency}-${targetCurrency}`;
-        const rates = await this.#client.execute(coalescerKey, fn);
+        const rates = await this.#client.execute(coalescerKey, fn, {
+            cancelSignal: options.cancelSignal,
+        });
         return {
             from: sourceCurrency,
             to: targetCurrency,
