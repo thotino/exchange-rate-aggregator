@@ -3,6 +3,8 @@
  */
 
 import { BulkheadAcquisitionAbortedError } from "./errors/BulkheadAcquisitionAbortedError";
+import { BulkheadRejectedError } from "./errors/BulkheadRejectedError";
+import { BulkheadTimeoutError } from "./errors/BulkheadTimeoutError";
 import { GlobalTimeoutError } from "./errors/GlobalTimeoutError";
 import { InvalidBulkheadOptionsError } from "./errors/InvalidBulkheadOptionsError";
 import { logger } from "./logger";
@@ -167,24 +169,6 @@ export class Bulkhead {
             waitingCount: this.#waitQueue.length,
             ...this.#metrics,
         };
-    }
-}
-class BulkheadRejectedError extends Error {
-    code = "BULKHEAD_REJECTED";
-    value: { name: string; maxConcurrent: number; waitLength: number };
-    constructor(name: string, maxConcurrent: number, waitLength: number) {
-        const message = "Bulkhead is full";
-        super(message);
-        this.value = { name, maxConcurrent, waitLength };
-    }
-}
-class BulkheadTimeoutError extends Error {
-    code: string = "BULKHEAD_TIMED_OUT";
-    value: { name: string; timeout: number };
-    constructor(name: string, timeout: number) {
-        const message = "Bulkhead timed out";
-        super(message);
-        this.value = { name, timeout };
     }
 }
 

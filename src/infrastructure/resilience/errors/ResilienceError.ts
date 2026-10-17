@@ -4,6 +4,7 @@ export class ResilienceError extends Error implements ResilienceErrorInterface {
     isCircuitBreakerFailure: boolean;
     isRetryable: boolean;
     code: string;
+    message: string;
     constructor(
         message: string,
         code: string,
@@ -12,7 +13,8 @@ export class ResilienceError extends Error implements ResilienceErrorInterface {
         cause: unknown,
     ) {
         super(message, { cause });
-        this.code = code
+        this.message = message;
+        this.code = code;
         this.isRetryable = isRetryable;
         this.isCircuitBreakerFailure = isCircuitBreakerFailure;
     }

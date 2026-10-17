@@ -1,3 +1,10 @@
+Le but est de construire un client en utilisant les patterns de résilience suivants:
+* Retry
+* Circuit-breaker
+* Bulkhead
+* Rate-limiter
+
+Le client est entièrement configurable, gère les réessaies, protège ses ressources. Il prends en entrée une callback et retourne un résultat ou une erreur.
 # DECISIONS ARCHITECTURALES
 ## Retry
 Le pattern de retry contrôle le timeout de chaque tentative. Et les timeouts sont rejoués.
