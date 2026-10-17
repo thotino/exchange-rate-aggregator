@@ -1,5 +1,6 @@
 import type { GetRatesOptions } from "../connectors/connector";
 import { exchangeRateCache } from "../infrastructure/cache/ExchangeRateCache";
+import { GlobalTimeoutError } from "../infrastructure/resilience/errors/GlobalTimeoutError";
 import type { Currencies, Providers } from "../interfaces/types";
 
 type Rate = {
@@ -31,7 +32,7 @@ export class ForeignExchangeRate {
         }
         const globalController = new AbortController();
         const globalTimer = setTimeout(() => {
-            globalController.abort(new Error("ERR_GET_RATES_OPERATION_TIMED_OUT"));
+            globalController.abort(new GlobalTimeoutError());
         }, ForeignExchangeRate.getRateOperationTimeout);
         try {
             const ratesA = await this.providerA.getRates(
