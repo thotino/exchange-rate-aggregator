@@ -14,7 +14,18 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown) {
     });
     response.end(JSON.stringify(body));
 }
-
+class WebserverError extends Error {
+    statusCode: number = 500;
+    code: string = "ERR_UNEXPECTED_ERROR";
+    /**
+     *
+     */
+    constructor(cause: unknown) {
+        const message = "An unexpected error occured";
+        super(message, { cause });
+        this.code = cause.code ?? "ERR_UNEXPECTED_ERROR"
+    }
+}
 export class Webserver {
     #server: Server;
     #rateLimiter: RateLimiter;
@@ -29,7 +40,7 @@ export class Webserver {
     }
 
     async start(): Promise<number> {
-        this.#rateLimiter.connect()
+        this.#rateLimiter.connect();
         await new Promise<void>((resolve, reject) => {
             const onError = (error: Error) => {
                 this.#server.off("listening", onListening);
@@ -50,7 +61,7 @@ export class Webserver {
     }
 
     async stop(): Promise<void> {
-        this.#rateLimiter.close()
+        this.#rateLimiter.close();
         if (!this.#server.listening) {
             return;
         }
@@ -96,8 +107,8 @@ export class Webserver {
         });
         response.setHeaders(headers);
         if (!limiterOutcome.allowed) {
-            if(limiterOutcome.retryAfter != null) {
-                response.setHeader("Retry-After", limiterOutcome.retryAfter)
+            if (limiterOutcome.retryAfter != null) {
+                response.setHeader("Retry-After", limiterOutcome.retryAfter);
             }
             sendJson(response, 429, {
                 error: "Too many requests",
@@ -119,8 +130,13 @@ export class Webserver {
             );
             sendJson(response, 200, result);
         } catch (error) {
-            console.error({ error });
-            sendJson(response, 502, { error });
+            const webserverError = new WebserverError(error);
+            console.error({ webserverError });
+            sendJson(response, webserverError.statusCode, {
+                message: webserverError.message,
+                code: webserverError.code,
+                statusCode: webserverError.statusCode,
+            });
         }
     }
 

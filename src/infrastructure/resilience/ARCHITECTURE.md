@@ -15,10 +15,12 @@ Si `retry-after` est plus long que `maxDelay`, mieux vaut abandonner le retry. L
 Ce timeout global garantit que la requête métier respecte une écheance maximale.
 
 * Décider quelles erreurs sont rejouables et lesquelles ouvrent le disjoncteur
+Les erreurs rejouables sont les timeouts métiers, les 500, 
 ## Circuit breaker
 Décider quelles erreurs déclenchent l'ouverture du disjoncteur.
 Traiter le problème de la concurrence si plusieurs requêtes arrivent au moment où le circuit est ouvvert. J'utilise une coalescence de requêtes mais au niveau du client et non pas au niveau du circuit breaker.
-
+## Cache
+Décider d'ajouter une politique de stale-while-revalidate. 
 ## Comment composer les patterns?
 L'ordre de Resilience4j:
 ```text
