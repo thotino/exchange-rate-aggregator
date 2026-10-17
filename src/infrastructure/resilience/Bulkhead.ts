@@ -3,6 +3,7 @@
  */
 
 import { BulkheadAcquisitionAbortedError } from "./errors/BulkheadAcquisitionAbortedError";
+import { GlobalTimeoutError } from "./errors/GlobalTimeoutError";
 import { InvalidBulkheadOptionsError } from "./errors/InvalidBulkheadOptionsError";
 import { logger } from "./logger";
 
@@ -87,9 +88,7 @@ export class Bulkhead {
                 this.#cleanupWaiter(waiter);
                 const reason = cancelSignal.reason;
                 reject(
-                    reason instanceof Error
-                        ? reason
-                        : new BulkheadAcquisitionAbortedError(),
+                    new BulkheadAcquisitionAbortedError(reason),
                 );
             };
             const timer = setTimeout(() => {
@@ -148,7 +147,7 @@ export class Bulkhead {
         options: { cancelSignal: AbortSignal },
     ) {
         if (options.cancelSignal.aborted) {
-            throw new Error("ERR_GET_RATES_OPERATION_TIMED_OUT");
+            throw new GlobalTimeoutError();
         }
         await this.#acquire({ cancelSignal: options.cancelSignal });
         let success = true;

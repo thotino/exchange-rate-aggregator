@@ -3,8 +3,11 @@
  */
 
 import { CustomTimeoutError } from "./errors/CustomTimeoutError";
+import { GlobalTimeoutError } from "./errors/GlobalTimeoutError";
 import { InvalidRetryOptionError } from "./errors/InvalidRetryOptionError";
 import { setTimeout as setTimeoutPromise } from "node:timers/promises";
+import type { ResilienceErrorInterface } from "./types";
+import { ResilienceError } from "./errors/ResilienceError";
 const RETRYABLE_ERRORS = new Set([
     "ETIMEDOUT",
     "ECONNRESET",
@@ -152,24 +155,25 @@ export class Retry {
         }
         return this.#calculateDelayWithJitter(initialDelay, prevDelay, attempt);
     }
-    #isRetryable(error: HTTPError) {
-        if (error.code != null && this.#retryableErrors.has(error.code)) {
-            return true;
-        }
-        if (
-            error.response != null &&
-            this.#retryableStatusCodes.has(error.response.status)
-        ) {
-            return true;
-        }
-        if (
-            error.response?.status === 503 &&
-            error.response?.headers != null &&
-            this.#getHeader(error.response?.headers, "retry-after")
-        ) {
-            return true;
-        }
-        return false;
+    #isRetryable(error: ResilienceErrorInterface) {
+        return error.isRetryable;
+        // if (error.code != null && this.#retryableErrors.has(error.code)) {
+        //     return true;
+        // }
+        // if (
+        //     error.response != null &&
+        //     this.#retryableStatusCodes.has(error.response.status)
+        // ) {
+        //     return true;
+        // }
+        // if (
+        //     error.response?.status === 503 &&
+        //     error.response?.headers != null &&
+        //     this.#getHeader(error.response?.headers, "retry-after")
+        // ) {
+        //     return true;
+        // }
+        // return false;
     }
     async execute<T>(
         fn: (options: { signal: AbortSignal }) => Promise<T>,
@@ -179,7 +183,7 @@ export class Retry {
         let prevDelay = this.#initialDelay;
         for (let attempt = 1; attempt <= this.#maxAttempts; attempt++) {
             if (options.cancelSignal.aborted) {
-                throw new Error("ERR_GET_RATES_OPERATION_TIMED_OUT");
+                throw new GlobalTimeoutError();
             }
             const controller = new AbortController();
             const timer = setTimeout(
@@ -199,6 +203,7 @@ export class Retry {
                 }
             } catch (err) {
                 let error = Retry.#ensureError(err);
+                error = Retry.#toResilienceError(error)
                 lastError = error;
                 if (
                     attempt === this.#maxAttempts ||
@@ -223,6 +228,12 @@ export class Retry {
             }
         }
         throw lastError;
+    }
+    static #toResilienceError(value: Error) {
+        if (RETRYABLE_ERRORS.has(value.cause?.code ?? "")) {
+            return new ResilienceError(value.message, value.cause?.code, true, true, value.cause)
+        }
+        return value;
     }
     static #ensureError(value: unknown) {
         if (value instanceof Error) return value;

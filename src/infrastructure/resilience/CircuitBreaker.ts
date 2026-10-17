@@ -103,14 +103,7 @@ export class CircuitBreaker {
         }
     }
     static #isFailure(error: unknown) {
-        if (
-            (error.code != null || error.status != null) &&
-            (FAILURE_STATUS_CODES.has(error.code ?? error.status) ||
-                FAILURE_ERRORS.has(error.code ?? error.status))
-        ) {
-            return true;
-        }
-        return false;
+        return error.circuitBreakerFailure;
     }
 
     #onFailure() {
