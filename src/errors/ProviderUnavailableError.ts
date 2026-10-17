@@ -1,11 +1,7 @@
 export class ProviderUnavailableError extends Error {
-    readonly status: string = "PROVIDER_UNAVAILABLE"
-    code: number;
-    response: Response;
+    readonly code: string = "PROVIDER_UNAVAILABLE";
     constructor(response: Response) {
         const message: string = response.statusText;
-        super(message);
-        this.response = response;
-        this.code = response.status;
+        super(message, { cause: response });
     }
 }
