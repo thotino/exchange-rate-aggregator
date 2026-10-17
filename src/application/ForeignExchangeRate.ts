@@ -1,5 +1,8 @@
 import type { GetRatesOptions } from "../connectors/connector";
-import { exchangeRateCache } from "../infrastructure/cache/ExchangeRateCache";
+import {
+    exchangeRateCache,
+    ItemState,
+} from "../infrastructure/cache/ExchangeRateCache";
 import { GlobalTimeoutError } from "../infrastructure/resilience/errors/GlobalTimeoutError";
 import type { Currencies, Providers } from "../interfaces/types";
 
@@ -25,11 +28,11 @@ export class ForeignExchangeRate {
         readonly providerA: RateProvider,
         readonly providerB: RateProvider,
     ) {}
-    async get(sourceCurrency: Currencies, targetCurrency: Currencies) {
-        const cacheKey = `FXRate::${sourceCurrency}::${targetCurrency}`;
-        if (exchangeRateCache.has(cacheKey)) {
-            return exchangeRateCache.get(cacheKey);
-        }
+
+    async #processWithProviders(
+        sourceCurrency: Currencies,
+        targetCurrency: Currencies,
+    ) {
         const globalController = new AbortController();
         const globalTimer = setTimeout(() => {
             globalController.abort(new GlobalTimeoutError());
@@ -40,12 +43,11 @@ export class ForeignExchangeRate {
                 targetCurrency,
                 { cancelSignal: globalController.signal },
             );
-            exchangeRateCache.set(cacheKey, ratesA);
             return ratesA;
         } catch (error) {
             console.error({ error });
             if (globalController.signal.aborted) {
-                throw globalController.signal.reason ?? error
+                throw globalController.signal.reason ?? error;
             }
             try {
                 const ratesB = await this.providerB.getRates(
@@ -53,7 +55,6 @@ export class ForeignExchangeRate {
                     targetCurrency,
                     { cancelSignal: globalController.signal },
                 );
-                exchangeRateCache.set(cacheKey, ratesB);
                 return ratesB;
             } catch (error) {
                 console.error({ error });
@@ -63,6 +64,43 @@ export class ForeignExchangeRate {
             if (globalTimer != null) {
                 clearTimeout(globalTimer);
             }
+        }
+    }
+    async #refreshCacheWithFreshRates(
+        cacheKey: string,
+        sourceCurrency: Currencies,
+        targetCurrency: Currencies,
+    ) {
+        const rates = await this.#processWithProviders(
+            sourceCurrency,
+            targetCurrency,
+        );
+        exchangeRateCache.set(cacheKey, rates);
+    }
+
+    async get(sourceCurrency: Currencies, targetCurrency: Currencies) {
+        const cacheKey = `FXRate::${sourceCurrency}::${targetCurrency}`;
+        const state = exchangeRateCache.getState(cacheKey);
+        switch (state) {
+            case ItemState.MISS:
+                const rates = await this.#processWithProviders(
+                    sourceCurrency,
+                    targetCurrency,
+                );
+                exchangeRateCache.set(cacheKey, rates);
+                return rates;
+            case ItemState.FRESH:
+                return exchangeRateCache.get(cacheKey);
+            case ItemState.STALE:
+                const staleRates = exchangeRateCache.get(cacheKey);
+                this.#refreshCacheWithFreshRates(
+                    cacheKey,
+                    sourceCurrency,
+                    targetCurrency,
+                ).catch(err => {
+                    console.error(err);
+                });
+                return staleRates;
         }
     }
 }

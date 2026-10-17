@@ -56,14 +56,17 @@ export class ProviderA implements BaseConnectorInterface {
             }
             return response.json();
         };
+        const fetchedAt = Date.now()
         const coalescerKey = `GetRates::${Providers.PROVIDER_A}-${sourceCurrency}-${targetCurrency}`;
         const rates = await this.#client.execute(coalescerKey, fn, {cancelSignal: options.cancelSignal});
+        const receivedAt = Date.now()
         return {
             from: sourceCurrency,
             to: targetCurrency,
             rate: rates.rate,
             provider: Providers.PROVIDER_A,
-            fetchedAt: new Date(),
+            fetchedAt,
+            receivedAt
         };
     }
 }
