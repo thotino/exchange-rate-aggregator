@@ -167,13 +167,13 @@ export class Bulkhead {
 
 export class BulkheadRegistry {
     #bulheads: Map<string, Bulkhead> = new Map();
-    register(name: string, config: BulkheadOptions) {
-        if (this.#bulheads.has(name)) {
+    register(config: BulkheadOptions) {
+        if (this.#bulheads.has(config.name)) {
             throw new Error("ERR_BULKHEAD_ALREADY_REGISTERED");
         }
-        const bulkhead = new Bulkhead(name, config);
+        const bulkhead = new Bulkhead(config);
         bulkhead.connect();
-        this.#bulheads.set(name, bulkhead);
+        this.#bulheads.set(config.name, bulkhead);
         return bulkhead;
     }
     get(name: string) {

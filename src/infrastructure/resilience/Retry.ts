@@ -45,8 +45,8 @@ export class Retry {
     #factor: number = 2;
     #jitter: JitterStatuses = JitterStatuses.FULL;
     #timeout: number = 30000;
-    #retryableErrors: Set<string> = RETRYABLE_ERRORS;
-    #retryableStatusCodes: Set<number> = RETRYABLE_STATUS_CODES;
+    #retryableErrors: Set<string>;
+    #retryableStatusCodes: Set<number>;
     constructor(options: Partial<RetryOptions>) {
         const resolvedOptions = { ...DEFAULT_OPTIONS, ...options };
         if (
@@ -143,23 +143,6 @@ export class Retry {
     }
     #isRetryable(error: ResilienceErrorInterface) {
         return error.isRetryable;
-        // if (error.code != null && this.#retryableErrors.has(error.code)) {
-        //     return true;
-        // }
-        // if (
-        //     error.response != null &&
-        //     this.#retryableStatusCodes.has(error.response.status)
-        // ) {
-        //     return true;
-        // }
-        // if (
-        //     error.response?.status === 503 &&
-        //     error.response?.headers != null &&
-        //     this.#getHeader(error.response?.headers, "retry-after")
-        // ) {
-        //     return true;
-        // }
-        // return false;
     }
     async execute<T>(
         fn: (options: { signal: AbortSignal }) => Promise<T>,
@@ -188,29 +171,28 @@ export class Retry {
                     clearTimeout(timer);
                 }
             } catch (err) {
-                let error = Retry.#ensureError(err);
-                error = Retry.#toResilienceError(error);
-                lastError = error;
+                const error = Retry.#ensureError(err);
+                const resilientError = Retry.#toResilienceError(error);
+                lastError = resilientError;
                 if (
                     attempt === this.#maxAttempts ||
-                    !this.#isRetryable(error)
+                    !this.#isRetryable(resilientError)
                 ) {
-                    throw error;
+                    throw resilientError;
                 }
                 const delay = this.#calculateDelay(
                     this.#initialDelay,
                     prevDelay,
                     attempt,
-                    error,
+                    resilientError,
                 );
                 if (delay == null) {
-                    throw error;
+                    throw resilientError;
                 }
                 prevDelay = delay;
                 await setTimeoutPromise(delay, null, {
                     signal: options.cancelSignal,
                 });
-                // await new Promise((resolve, reject) => setTimeout(resolve, delay));
             }
         }
         throw lastError;
@@ -234,7 +216,13 @@ export class Retry {
                 value.cause,
             );
         }
-        return value;
+        return new ResilienceError(
+            value.message,
+            value.cause?.code,
+            false,
+            false,
+            value.cause,
+        );
     }
     static #ensureError(value: unknown) {
         if (value instanceof Error) return value;
