@@ -4,3 +4,30 @@ export interface ResilienceErrorInterface {
     readonly code: string;
     readonly message: string;
 }
+
+export interface RetryOptions {
+    readonly maxAttempts: number;
+    readonly initialDelay: number;
+    readonly maxDelay: number;
+    readonly factor: number;
+    readonly jitter: JitterStatuses;
+    readonly timeout: number;
+    readonly retryableErrors: Array<string>;
+    readonly retryableStatusCodes: Array<number>;
+}
+export interface BulkheadOptions {
+    readonly name: string;
+    readonly maxConcurrent: number;
+    readonly maxWaiting: number;
+    readonly timeoutMS: number;
+}
+export interface CircuitBreakerOptions {
+    readonly failureThreshold: number;
+    readonly resetTimeout: number;
+    readonly halfOpenRequests: number;
+}
+interface ResilienceClientConfig {
+    readonly retryOptions: RetryOptions;
+    readonly circuitBreakerOptions: CircuitBreakerOptions;
+    readonly bulkheadOptions: BulkheadOptions
+}

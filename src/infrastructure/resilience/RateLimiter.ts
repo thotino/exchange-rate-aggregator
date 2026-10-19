@@ -23,13 +23,19 @@ export enum RateLimiterAlgorithms {
     SLIDING_WINDOW_COUNTER = "sliding-window-counter",
     TOKEN_BUCKET = "token-bucket",
 }
-
+interface WindowRateLimiterOptions {
+    readonly windowMS: number;
+    readonly maxRequests: number;
+}
 class FixedWindowRateLimiter implements RateLimiterInterface {
     #windowMS: number = 60_000;
     #maxRequests: number = 100;
     #windows: Map<string, number> = new Map();
     #cleanupInterval: NodeJS.Timeout | null = null;
-    constructor() {}
+    constructor(options: WindowRateLimiterOptions) {
+        this.#windowMS = options.windowMS;
+        this.#maxRequests = options.maxRequests;
+    }
     async connect() {
         if (this.#cleanupInterval == null) {
             this.#cleanupInterval = setInterval(
@@ -71,12 +77,16 @@ class FixedWindowRateLimiter implements RateLimiterInterface {
         }
     }
 }
+
 class SlidingWindowLogLimiter implements RateLimiterInterface {
     #windowMS: number = 60_000;
     #maxRequests: number = 100;
     #requestLogs: Map<string, number[]> = new Map();
     #cleanupInterval: NodeJS.Timeout | null = null;
-    constructor() {}
+    constructor(options: WindowRateLimiterOptions) {
+        this.#windowMS = options.windowMS;
+        this.#maxRequests = options.maxRequests;
+    }
     connect() {
         if (this.#cleanupInterval == null) {
             this.#cleanupInterval = setInterval(
@@ -133,7 +143,10 @@ class SlidingWindowCounterLimiter implements RateLimiterInterface {
     #maxRequests: number = 100;
     #windows: Map<string, number> = new Map();
     // #cleanupInterval: NodeJS.Timeout | null = null;
-    constructor() {}
+    constructor(options: WindowRateLimiterOptions) {
+        this.#windowMS = options.windowMS;
+        this.#maxRequests = options.maxRequests;
+    }
     connect() {
         // if (this.#cleanupInterval == null) {
         //     this.#cleanupInterval = setInterval(
@@ -193,12 +206,19 @@ class SlidingWindowCounterLimiter implements RateLimiterInterface {
     }
 }
 type Bucket = { tokens: number; lastRefill: number };
+interface TokenBucketLimiterOptions {
+    readonly bucketSize: number;
+    readonly refillRate: number;
+}
 class TokenBucketLimiter implements RateLimiterInterface {
     #bucketSize = 10;
     #refillRate = 1;
     #buckets: Map<string, Bucket> = new Map();
     #cleanupInterval: NodeJS.Timeout | null = null;
-    constructor() {}
+    constructor(options: TokenBucketLimiterOptions) {
+        this.#bucketSize = options.bucketSize;
+        this.#refillRate = options.refillRate;
+    }
     connect() {
         if (this.#cleanupInterval == null) {
             this.#cleanupInterval = setInterval(() => this.#cleanup(), 30_000);
@@ -269,14 +289,29 @@ class TokenBucketLimiter implements RateLimiterInterface {
         }
     }
 }
-
+const DEFAULT_WINDOW_RATE_LIMITER_OPTIONS: WindowRateLimiterOptions = {
+    maxRequests: 100,
+    windowMS: 60_000,
+};
+const DEFAULT_TOKEN_BUCKET_RATE_LIMITER_OPTIONS: TokenBucketLimiterOptions = {
+    refillRate: 1,
+    bucketSize: 10,
+};
 export class RateLimiter {
     #limiters: Record<RateLimiterAlgorithms, RateLimiterInterface> = {
-        [RateLimiterAlgorithms.FIXED_WINDOW]: new FixedWindowRateLimiter(),
-        [RateLimiterAlgorithms.SLIDING_WINDOW]: new SlidingWindowLogLimiter(),
+        [RateLimiterAlgorithms.FIXED_WINDOW]: new FixedWindowRateLimiter(
+            DEFAULT_WINDOW_RATE_LIMITER_OPTIONS,
+        ),
+        [RateLimiterAlgorithms.SLIDING_WINDOW]: new SlidingWindowLogLimiter(
+            DEFAULT_WINDOW_RATE_LIMITER_OPTIONS,
+        ),
         [RateLimiterAlgorithms.SLIDING_WINDOW_COUNTER]:
-            new SlidingWindowCounterLimiter(),
-        [RateLimiterAlgorithms.TOKEN_BUCKET]: new TokenBucketLimiter(),
+            new SlidingWindowCounterLimiter(
+                DEFAULT_WINDOW_RATE_LIMITER_OPTIONS,
+            ),
+        [RateLimiterAlgorithms.TOKEN_BUCKET]: new TokenBucketLimiter(
+            DEFAULT_TOKEN_BUCKET_RATE_LIMITER_OPTIONS,
+        ),
     };
     constructor(readonly algorithm: RateLimiterAlgorithms) {}
     get maxRequests() {

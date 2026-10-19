@@ -8,12 +8,8 @@ import { BulkheadTimeoutError } from "./errors/BulkheadTimeoutError";
 import { GlobalTimeoutError } from "./errors/GlobalTimeoutError";
 import { InvalidBulkheadOptionsError } from "./errors/InvalidBulkheadOptionsError";
 import { logger } from "./logger";
+import type { BulkheadOptions } from "./types";
 
-interface BulkheadOptions {
-    readonly maxConcurrent: number;
-    readonly maxWaiting: number;
-    readonly timeoutMS: number;
-}
 interface BulkheadMetrics {
     acquired: number;
     rejected: number;
@@ -28,6 +24,12 @@ type Waiter = {
     timer: NodeJS.Timeout;
     cancelSignal: AbortSignal;
     onAbort: () => void;
+};
+const DEFAULT_BULKHEAD_OPTIONS: BulkheadOptions = {
+    name: "defaultBulkhead",
+    maxConcurrent: 10,
+    maxWaiting: 20,
+    timeoutMS: 10_000,
 };
 export class Bulkhead {
     #name: string;
@@ -44,15 +46,8 @@ export class Bulkhead {
         failed: 0,
     };
     #metricsInterval: NodeJS.Timeout | null = null;
-    constructor(
-        name: string,
-        config: BulkheadOptions = {
-            maxConcurrent: 10,
-            maxWaiting: 20,
-            timeoutMS: 10_000,
-        },
-    ) {
-        this.#name = name;
+    constructor(config: BulkheadOptions = DEFAULT_BULKHEAD_OPTIONS) {
+        this.#name = config.name;
         if (
             !Number.isInteger(config.maxConcurrent) ||
             config.maxConcurrent <= 0 ||
@@ -89,9 +84,7 @@ export class Bulkhead {
                 if (!this.#removeWaiter(waiter)) return;
                 this.#cleanupWaiter(waiter);
                 const reason = cancelSignal.reason;
-                reject(
-                    new BulkheadAcquisitionAbortedError(reason),
-                );
+                reject(new BulkheadAcquisitionAbortedError(reason));
             };
             const timer = setTimeout(() => {
                 if (!this.#removeWaiter(waiter)) return;

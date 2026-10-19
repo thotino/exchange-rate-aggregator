@@ -5,6 +5,7 @@
 import { CircuitBreakerHalfOpenError } from "./errors/CircuitBreakerHalfOpenError";
 import { CircuitBreakerOpenError } from "./errors/CircuitBreakerOpenError";
 import { logger } from "./logger";
+import type { CircuitBreakerOptions } from "./types";
 
 const FAILURE_STATUS_CODES = new Set([500, 502, 503, 504]);
 const FAILURE_ERRORS = new Set(["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED"]);
@@ -13,11 +14,11 @@ enum CircuitBreakerStates {
     OPEN = "open",
     HALF_OPEN = "half-open",
 }
-interface CircuitBreakerOptions {
-    failureThreshold: number;
-    resetTimeout: number;
-    halfOpenRequests: number;
-}
+const DEFAULT_CIRCUIT_BREAKER_OPTIONS: CircuitBreakerOptions = {
+    failureThreshold: 1,
+    resetTimeout: 30_000,
+    halfOpenRequests: 1,
+};
 
 export class CircuitBreaker {
     #failureThreshold = 1;
@@ -30,11 +31,7 @@ export class CircuitBreaker {
     #halfOpenAttemps = 0;
     #stateInterval: NodeJS.Timeout | null = null;
     constructor(
-        options: CircuitBreakerOptions = {
-            failureThreshold: 1,
-            resetTimeout: 30_000,
-            halfOpenRequests: 1,
-        },
+        options: CircuitBreakerOptions = DEFAULT_CIRCUIT_BREAKER_OPTIONS,
     ) {
         this.#failureThreshold = options.failureThreshold;
         this.#resetTimeout = options.resetTimeout;

@@ -5,6 +5,13 @@ Le but est de construire un client en utilisant les patterns de résilience suiv
 * Rate-limiter
 
 Le client est entièrement configurable, gère les réessaies, protège ses ressources. Il prends en entrée une callback et retourne un résultat ou une erreur.
+## Exigences fonctionnelles
+* Exécution de la callback dans un délai prédéfini (timeout global)
+* Réessaie de l'exécution de la callback en cas d'erreur de type Timeout
+* Chaque essaie est limité dans le temps
+* Gestion de l'indisponibilité du serveur distant (ouverture du circuit breaker)
+* Gestion des requêtes identiques simultanées (via une calescence des requêtes)
+## Exigences non fonctionnelles
 # DECISIONS ARCHITECTURALES
 ## Retry
 Le pattern de retry contrôle le timeout de chaque tentative. Et les timeouts sont rejoués.

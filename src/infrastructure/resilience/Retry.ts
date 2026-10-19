@@ -6,8 +6,9 @@ import { CustomTimeoutError } from "./errors/CustomTimeoutError";
 import { GlobalTimeoutError } from "./errors/GlobalTimeoutError";
 import { InvalidRetryOptionError } from "./errors/InvalidRetryOptionError";
 import { setTimeout as setTimeoutPromise } from "node:timers/promises";
-import type { ResilienceErrorInterface } from "./types";
+import type { ResilienceErrorInterface, RetryOptions } from "./types";
 import { ResilienceError } from "./errors/ResilienceError";
+import { JitterStatuses } from "./constants";
 const RETRYABLE_ERRORS = new Set([
     "ETIMEDOUT",
     "ECONNRESET",
@@ -18,12 +19,7 @@ const RETRYABLE_ERRORS = new Set([
     "EAI_AGAIN",
 ]);
 const RETRYABLE_STATUS_CODES = new Set<number>([408, 429, 500, 502, 503, 504]);
-enum JitterStatuses {
-    FULL = "full",
-    EQUAL = "equal",
-    NONE = "none",
-    DECORRELATE = "decorrelate",
-}
+
 type HTTPError = Error & {
     code?: string;
     response?: {
@@ -32,16 +28,6 @@ type HTTPError = Error & {
     };
 };
 
-export interface RetryOptions {
-    maxAttempts: number;
-    initialDelay: number;
-    maxDelay: number;
-    factor: number;
-    jitter: JitterStatuses;
-    timeout: number;
-    retryableErrors: Set<string>;
-    retryableStatusCodes: Set<number>;
-}
 const DEFAULT_OPTIONS: RetryOptions = {
     maxAttempts: 3,
     initialDelay: 1000,
@@ -49,8 +35,8 @@ const DEFAULT_OPTIONS: RetryOptions = {
     factor: 2,
     jitter: JitterStatuses.FULL,
     timeout: 3_000,
-    retryableErrors: new Set(),
-    retryableStatusCodes: new Set<number>(),
+    retryableErrors: [],
+    retryableStatusCodes: [],
 };
 export class Retry {
     #maxAttempts: number = 5;
@@ -203,7 +189,7 @@ export class Retry {
                 }
             } catch (err) {
                 let error = Retry.#ensureError(err);
-                error = Retry.#toResilienceError(error)
+                error = Retry.#toResilienceError(error);
                 lastError = error;
                 if (
                     attempt === this.#maxAttempts ||
@@ -231,7 +217,13 @@ export class Retry {
     }
     static #toResilienceError(value: Error) {
         if (RETRYABLE_ERRORS.has(value.cause?.code ?? "")) {
-            return new ResilienceError(value.message, value.cause?.code, true, true, value.cause)
+            return new ResilienceError(
+                value.message,
+                value.cause?.code,
+                true,
+                true,
+                value.cause,
+            );
         }
         return value;
     }
