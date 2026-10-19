@@ -1,26 +1,10 @@
-import type { GetRatesOptions } from "../connectors/connector";
 import {
     exchangeRateCache,
     ItemState,
 } from "../infrastructure/cache/ExchangeRateCache";
 import { GlobalTimeoutError } from "../infrastructure/resilience/errors/GlobalTimeoutError";
-import type { Currencies, Providers } from "../interfaces/types";
-
-type Rate = {
-    from: Currencies;
-    to: Currencies;
-    rate: number;
-    provider: Providers;
-    fetchedAt: Date;
-};
-interface RateProvider {
-    baseUrl: string;
-    getRates: (
-        sourceCurrency: Currencies,
-        targetCurrency: Currencies,
-        options: GetRatesOptions,
-    ) => Promise<Rate>;
-}
+import type { Currencies } from "../interfaces/types";
+import type { RateProvider } from "../types/provider";
 
 export class ForeignExchangeRate {
     static getRateOperationTimeout: number = 20_000;
