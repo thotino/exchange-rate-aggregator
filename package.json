@@ -11,7 +11,7 @@
     "dev:heapprofiler": "clinic heapprofiler -- node --env-file=.env.dev --import=tsx src/main.ts",
     "prettier": "prettier --write \"src/**/*.ts\"",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

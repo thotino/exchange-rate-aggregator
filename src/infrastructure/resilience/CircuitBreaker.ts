@@ -5,7 +5,7 @@
 import { CircuitBreakerHalfOpenError } from "./errors/CircuitBreakerHalfOpenError";
 import { CircuitBreakerOpenError } from "./errors/CircuitBreakerOpenError";
 import { logger } from "./logger";
-import type { CircuitBreakerOptions } from "./types";
+import type { CircuitBreakerOptions, ResilienceErrorInterface } from "./types";
 
 const FAILURE_STATUS_CODES = new Set([500, 502, 503, 504]);
 const FAILURE_ERRORS = new Set(["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED"]);
@@ -99,8 +99,8 @@ export class CircuitBreaker {
             this.#failures = 0;
         }
     }
-    static #isFailure(error: unknown) {
-        return error.circuitBreakerFailure;
+    static #isFailure(error: ResilienceErrorInterface) {
+        return error.isCircuitBreakerFailure;
     }
 
     #onFailure() {
