@@ -22,7 +22,11 @@ Si `retry-after` est plus long que `maxDelay`, mieux vaut abandonner le retry. L
 Ce timeout global garantit que la requête métier respecte une écheance maximale.
 
 * Décider quelles erreurs sont rejouables et lesquelles ouvrent le disjoncteur
-Les erreurs rejouables sont les timeouts métiers, les 500, 
+Les erreurs rejouables sont:
+* les timeouts métiers,
+* les erreurs réseau temporaire (ECONNREFUSED, ECONNRESET)
+* les erreurs HTTP 500, 
+* les erreurs HTTP 502, 503, 504
 ## Circuit breaker
 Décider quelles erreurs déclenchent l'ouverture du disjoncteur.
 Traiter le problème de la concurrence si plusieurs requêtes arrivent au moment où le circuit est ouvvert. J'utilise une coalescence de requêtes mais au niveau du client et non pas au niveau du circuit breaker.

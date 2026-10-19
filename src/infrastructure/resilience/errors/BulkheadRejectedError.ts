@@ -1,4 +1,11 @@
-export class BulkheadRejectedError extends Error {
+import type { ResilienceErrorInterface } from "../types";
+
+export class BulkheadRejectedError
+    extends Error
+    implements ResilienceErrorInterface
+{
+    isCircuitBreakerFailure: boolean = false;
+    isRetryable: boolean = false;
     code = "BULKHEAD_REJECTED";
     value: { name: string; maxConcurrent: number; waitLength: number };
     constructor(name: string, maxConcurrent: number, waitLength: number) {

@@ -216,10 +216,19 @@ export class Retry {
         throw lastError;
     }
     static #toResilienceError(value: Error) {
-        if (RETRYABLE_ERRORS.has(value.cause?.code ?? "")) {
+        if (RETRYABLE_STATUS_CODES.has(value.cause?.status ?? "")) {
             return new ResilienceError(
                 value.message,
-                value.cause?.code,
+                value.code,
+                true,
+                true,
+                value.cause,
+            );
+        }
+        if (RETRYABLE_ERRORS.has(value.cause?.code)) {
+            return new ResilienceError(
+                value.message,
+                value.cause.code,
                 true,
                 true,
                 value.cause,
