@@ -16,16 +16,12 @@ async function main() {
     for (const connector of Object.values(providers)) {
         await connector.start();
     }
-    await providerAConnector.connect();
-    await providerBConnector.connect();
     await webserver.start();
 }
 async function onFinishEvent(error: Error | null) {
     if (Error.isError(error)) {
         console.error(error);
     }
-    await providerAConnector.close();
-    await providerBConnector.close();
     await webserver.stop();
     for (const connector of Object.values(providers)) {
         await connector.stop();

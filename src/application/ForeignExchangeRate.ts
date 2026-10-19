@@ -13,6 +13,13 @@ export class ForeignExchangeRate {
         readonly providerB: RateProvider,
     ) {}
 
+    async connect() {
+        await [this.providerA.connect(), this.providerB.connect()];
+    }
+    async close() {
+        await [this.providerA.close(), this.providerB.close()];
+    }
+
     async #processWithProviders(
         sourceCurrency: Currencies,
         targetCurrency: Currencies,

@@ -14,7 +14,7 @@ import type {
 } from "../types/connector";
 import type { RateProvider } from "../types/provider";
 
-export class ProviderB implements BaseConnectorInterface, RateProvider {
+export class ProviderB implements RateProvider {
     readonly baseUrl: string;
     #client: LogicalOperationResilientClient;
     constructor(readonly url: string) {
@@ -71,12 +71,12 @@ export class ProviderB implements BaseConnectorInterface, RateProvider {
                 { signal: AbortSignal.any([options.cancelSignal]) },
             );
             if (!response.ok) {
-                if (response.status === 500) {
-                    throw new ProviderUnavailableError(response);
-                }
-                if (response.status === 504) {
-                    throw new ProviderTimeoutError(response);
-                }
+                // if (response.status === 500) {
+                //     throw new ProviderUnavailableError(response);
+                // }
+                // if (response.status === 504) {
+                //     throw new ProviderTimeoutError(response);
+                // }
                 const error = new ProviderError(response);
                 throw error;
             }

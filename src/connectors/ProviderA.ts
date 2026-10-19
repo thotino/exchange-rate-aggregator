@@ -14,7 +14,7 @@ import type {
 } from "../types/connector";
 import type { RateProvider } from "../types/provider";
 
-export class ProviderA implements BaseConnectorInterface, RateProvider {
+export class ProviderA implements RateProvider {
     readonly baseUrl: string;
     // TODO: implement the inversion of dependencies here
     #client: LogicalOperationResilientClient;
@@ -73,12 +73,12 @@ export class ProviderA implements BaseConnectorInterface, RateProvider {
                 { signal: AbortSignal.any([signal, options.cancelSignal]) },
             );
             if (!response.ok) {
-                if (response.status === 500) {
-                    throw new ProviderUnavailableError(response);
-                }
-                if (response.status === 504) {
-                    throw new ProviderTimeoutError(response);
-                }
+                // if (response.status === 500) {
+                //     throw new ProviderUnavailableError(response);
+                // }
+                // if (response.status === 504) {
+                //     throw new ProviderTimeoutError(response);
+                // }
                 const error = new ProviderError(response);
                 throw error;
             }

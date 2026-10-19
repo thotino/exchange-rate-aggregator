@@ -1,3 +1,5 @@
+import type { BaseConnectorInterface } from "./connector";
+
 export type Rate = {
     from: Currencies;
     to: Currencies;
@@ -7,7 +9,7 @@ export type Rate = {
     receivedAt: number;
     expiresAt: number;
 };
-export interface RateProvider {
+export interface RateProvider extends BaseConnectorInterface {
     baseUrl: string;
     getRates: (
         sourceCurrency: Currencies,

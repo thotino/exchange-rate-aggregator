@@ -14,6 +14,7 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown) {
     });
     response.end(JSON.stringify(body));
 }
+const ERROR_MAP = new Map([["ERR_OPERATION_TIMEOUT", 408]]);
 class WebserverError extends Error {
     statusCode: number = 500;
     code: string = "ERR_UNEXPECTED_ERROR";
@@ -23,7 +24,8 @@ class WebserverError extends Error {
     constructor(cause: unknown) {
         const message = "An unexpected error occured";
         super(message, { cause });
-        this.code = cause.code ?? "ERR_UNEXPECTED_ERROR"
+        this.code = cause.code ?? "ERR_UNEXPECTED_ERROR";
+        this.statusCode = ERROR_MAP.get(this.code) ?? 500;
     }
 }
 export class Webserver {
@@ -41,6 +43,7 @@ export class Webserver {
 
     async start(): Promise<number> {
         this.#rateLimiter.connect();
+        await this.exchangeRate.connect();
         await new Promise<void>((resolve, reject) => {
             const onError = (error: Error) => {
                 this.#server.off("listening", onListening);
@@ -61,6 +64,7 @@ export class Webserver {
     }
 
     async stop(): Promise<void> {
+        await this.exchangeRate.close();
         this.#rateLimiter.close();
         if (!this.#server.listening) {
             return;
