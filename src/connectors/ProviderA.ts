@@ -5,7 +5,7 @@ import { Bulkhead } from "../infrastructure/resilience/Bulkhead";
 import { CircuitBreaker } from "../infrastructure/resilience/CircuitBreaker";
 import { JitterStatuses } from "../infrastructure/resilience/constants";
 import { RequestCoalescer } from "../infrastructure/resilience/RequestCoalescer";
-import { LogicalOperationResilientClient } from "../infrastructure/resilience/ResilientClient";
+import { LogicalOperationResilientClient, PerAttemptResilientClient, ResilientClient } from "../infrastructure/resilience/ResilientClient";
 import { Retry } from "../infrastructure/resilience/Retry";
 import { Providers, type Currencies } from "../interfaces/types";
 import type {
@@ -17,20 +17,10 @@ import type { RateProvider } from "../types/provider";
 export class ProviderA implements RateProvider {
     readonly baseUrl: string;
     // TODO: implement the inversion of dependencies here
-    #client: LogicalOperationResilientClient;
+    #client: ResilientClient;
     constructor(readonly url: string) {
         this.baseUrl = url;
-        this.#client = new LogicalOperationResilientClient(
-            // new CircuitBreaker(),
-            // new Bulkhead(this.constructor.name),
-            // new Retry({
-            //     maxAttempts: 3,
-            //     retryableErrors: new Set([
-            //         "PROVIDER_TIMEOUT",
-            //         "PROVIDER_UNAVAILABLE",
-            //     ]),
-            // }),
-            // new RequestCoalescer(),
+        this.#client = new PerAttemptResilientClient(
             {
                 bulkheadOptions: {
                     name: "ProviderA",
@@ -73,12 +63,6 @@ export class ProviderA implements RateProvider {
                 { signal: AbortSignal.any([signal, options.cancelSignal]) },
             );
             if (!response.ok) {
-                // if (response.status === 500) {
-                //     throw new ProviderUnavailableError(response);
-                // }
-                // if (response.status === 504) {
-                //     throw new ProviderTimeoutError(response);
-                // }
                 const error = new ProviderError(response);
                 throw error;
             }

@@ -4,7 +4,7 @@ import { RequestCoalescer } from "./RequestCoalescer";
 import { Retry } from "./Retry";
 import type { ResilienceClientConfig } from "./types";
 
-abstract class ResilientClient {
+export abstract class ResilientClient {
     readonly retry: Retry
     readonly bulkhead: Bulkhead
     readonly circuitBreaker: CircuitBreaker
