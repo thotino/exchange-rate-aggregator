@@ -1,16 +1,13 @@
-import type { ResilienceErrorInterface } from "../types";
+import { ResilienceError } from "./ResilienceError";
 
-export class BulkheadTimeoutError
-    extends Error
-    implements ResilienceErrorInterface
-{
-    isCircuitBreakerFailure: boolean = false;
-    isRetryable: boolean = false;
-    code: string = "BULKHEAD_TIMED_OUT";
+export class BulkheadTimeoutError extends ResilienceError {
     value: { name: string; timeout: number };
     constructor(name: string, timeout: number) {
+        const isRetryable: boolean = false;
+        const isCircuitBreakerFailure: boolean = false;
+        const code: string = "BULKHEAD_TIMED_OUT";
         const message = "Bulkhead timed out";
-        super(message);
+        super(message, code, isRetryable, isCircuitBreakerFailure, null);
         this.value = { name, timeout };
     }
 }

@@ -1,16 +1,13 @@
-import type { ResilienceErrorInterface } from "../types";
+import { ResilienceError } from "./ResilienceError";
 
-export class BulkheadRejectedError
-    extends Error
-    implements ResilienceErrorInterface
-{
-    isCircuitBreakerFailure: boolean = false;
-    isRetryable: boolean = false;
-    code = "BULKHEAD_REJECTED";
+export class BulkheadRejectedError extends ResilienceError {
     value: { name: string; maxConcurrent: number; waitLength: number };
     constructor(name: string, maxConcurrent: number, waitLength: number) {
+        const isCircuitBreakerFailure: boolean = false;
+        const isRetryable: boolean = false;
+        const code = "BULKHEAD_REJECTED";
         const message = "Bulkhead is full";
-        super(message);
+        super(message, code, isRetryable, isCircuitBreakerFailure, null);
         this.value = { name, maxConcurrent, waitLength };
     }
 }

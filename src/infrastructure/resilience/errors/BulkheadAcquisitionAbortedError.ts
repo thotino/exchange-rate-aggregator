@@ -1,14 +1,11 @@
-import type { ResilienceErrorInterface } from "../types";
+import { ResilienceError } from "./ResilienceError";
 
-export class BulkheadAcquisitionAbortedError
-    extends Error
-    implements ResilienceErrorInterface
-{
-    readonly code: string = "BULKHEAD_ACQUISITION_ABORTED";
-    readonly isRetryable: boolean = false;
-    readonly isCircuitBreakerFailure: boolean = false;
+export class BulkheadAcquisitionAbortedError extends ResilienceError {
     constructor(cause: unknown) {
+        const code: string = "BULKHEAD_ACQUISITION_ABORTED";
+        const isRetryable: boolean = false;
+        const isCircuitBreakerFailure: boolean = false;
         const message: string = "Bulkhead acquisition aborted";
-        super(message, { cause });
+        super(message, code, isRetryable, isCircuitBreakerFailure, { cause });
     }
 }

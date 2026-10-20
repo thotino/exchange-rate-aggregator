@@ -18,4 +18,19 @@ export class ResilienceError extends Error implements ResilienceErrorInterface {
         this.isRetryable = isRetryable;
         this.isCircuitBreakerFailure = isCircuitBreakerFailure;
     }
+
+    static from(
+        error: Error,
+        options: { isRetryable: boolean; isCircuitBreakerFailure: boolean },
+    ) {
+        if (error instanceof ResilienceError) return error;
+        const code = error.cause instanceof Response ? error.cause.statusText : "ERR_UNEXPECTED_ERROR"
+        return new ResilienceError(
+            error.message,
+            code,
+            options.isRetryable,
+            options.isCircuitBreakerFailure,
+            error,
+        );
+    }
 }

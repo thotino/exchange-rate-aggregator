@@ -1,4 +1,4 @@
-export class InvalidBulkheadOptionsError extends Error {
+export class InvalidBulkheadOptionError extends Error {
     readonly code: string = "INVALID_BULKHEAD_OPTION";
     /**
      *

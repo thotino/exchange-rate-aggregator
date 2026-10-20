@@ -1,8 +1,11 @@
-export class CustomTimeoutError extends Error {
-    readonly code: string = "ERR_ATTEMPT_TIMEOUT";
-    readonly retryable: boolean = true;
-    readonly circuitBreakerFailure: boolean = true;
+import { ResilienceError } from "./ResilienceError";
+
+export class CustomTimeoutError extends ResilienceError {
     constructor() {
-        super();
+        const message: string = "Attempt timedout"
+        const code: string = "ERR_ATTEMPT_TIMEOUT";
+        const isRetryable: boolean = true;
+        const isCircuitBreakerFailure: boolean = true;
+        super(message, code, isRetryable, isCircuitBreakerFailure, null);
     }
 }

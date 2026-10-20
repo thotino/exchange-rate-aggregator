@@ -1,12 +1,12 @@
-import type { ResilienceErrorInterface } from "../types";
+import { ResilienceError } from "./ResilienceError";
 
-export class CircuitBreakerHalfOpenError extends Error implements ResilienceErrorInterface{
-    code: string = "ERR_CIRCUIT_BREAKER_HALF_OPEN";
-    isRetryable: boolean = false;
-    isCircuitBreakerFailure: boolean= false;
+export class CircuitBreakerHalfOpenError extends ResilienceError {
     constructor() {
+        const code: string = "ERR_CIRCUIT_BREAKER_HALF_OPEN";
+        const isRetryable: boolean = false;
+        const isCircuitBreakerFailure: boolean = false;
         const message: string =
             "Circuit breaker is half open, waiting for test requests";
-        super(message);
+        super(message, code, isRetryable, isCircuitBreakerFailure, null);
     }
 }

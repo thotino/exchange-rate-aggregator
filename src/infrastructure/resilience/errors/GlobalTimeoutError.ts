@@ -2,13 +2,13 @@ import type { ResilienceErrorInterface } from "../types";
 import { ResilienceError } from "./ResilienceError";
 
 export class GlobalTimeoutError
-    extends Error
-    implements ResilienceErrorInterface
+    extends ResilienceError
 {
-    readonly code: string = "ERR_OPERATION_TIMEOUT";
-    isRetryable: boolean = false;
-    isCircuitBreakerFailure: boolean = false;
     constructor() {
-        super();
+        const message: string = "Timeout"
+        const code: string = "ERR_OPERATION_TIMEOUT";
+        const isRetryable: boolean = false;
+        const isCircuitBreakerFailure: boolean = false;
+        super(message, code, isRetryable, isCircuitBreakerFailure, null);
     }
 }
