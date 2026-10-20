@@ -4,6 +4,8 @@
 
 import { CircuitBreakerHalfOpenError } from "./errors/CircuitBreakerHalfOpenError";
 import { CircuitBreakerOpenError } from "./errors/CircuitBreakerOpenError";
+import { InvalidCircuitBreakerOptionError } from "./errors/InvalidCircuitBreakerOptionError";
+import { ResilienceError } from "./errors/ResilienceError";
 import { logger } from "./logger";
 import type { CircuitBreakerOptions, ResilienceErrorInterface } from "./types";
 
@@ -21,18 +23,25 @@ const DEFAULT_CIRCUIT_BREAKER_OPTIONS: CircuitBreakerOptions = {
 };
 
 export class CircuitBreaker {
-    #failureThreshold = 1;
-    #resetTimeout = 30_000;
-    #halfOpenRequests = 1;
+    #failureThreshold: number;
+    #resetTimeout: number;
+    #halfOpenRequests: number;
     #state = CircuitBreakerStates.CLOSED;
-    #failures = 0;
-    #successes = 0;
+    #failures: number = 0;
+    #successes: number = 0;
     #lastFailure: number | null = null;
     #halfOpenAttemps = 0;
     #stateInterval: NodeJS.Timeout | null = null;
     constructor(
         options: CircuitBreakerOptions = DEFAULT_CIRCUIT_BREAKER_OPTIONS,
     ) {
+        if (
+            options.failureThreshold < 1 ||
+            options.halfOpenRequests < 1 ||
+            options.resetTimeout <= 0
+        ) {
+            throw new InvalidCircuitBreakerOptionError();
+        }
         this.#failureThreshold = options.failureThreshold;
         this.#resetTimeout = options.resetTimeout;
         this.#halfOpenRequests = options.halfOpenRequests;
@@ -79,11 +88,31 @@ export class CircuitBreaker {
             return result;
         } catch (error) {
             logger.error("[CircuitBreaker]", { error });
-            if (CircuitBreaker.#isFailure(error)) {
+            const normalizedError = ResilienceError.from(
+                error,
+                CircuitBreaker.classifyError(error),
+            );
+            if (CircuitBreaker.#isFailure(normalizedError)) {
                 this.#onFailure();
             }
             throw error;
         }
+    }
+
+    static classifyError(error: Error) {
+        if (error instanceof ResilienceError) {
+            return {
+                isRetryable: error.isRetryable,
+                isCircuitBreakerFailure: error.isCircuitBreakerFailure,
+            };
+        }
+        if (
+            FAILURE_STATUS_CODES.has(error.cause.status) ||
+            FAILURE_ERRORS.has(error.code)
+        ) {
+            return { isRetryable: true, isCircuitBreakerFailure: true };
+        }
+        return { isRetryable: true, isCircuitBreakerFailure: true };
     }
 
     #onSuccess() {

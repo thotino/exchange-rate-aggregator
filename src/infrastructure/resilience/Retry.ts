@@ -20,14 +20,6 @@ const RETRYABLE_ERRORS = new Set([
 ]);
 const RETRYABLE_STATUS_CODES = new Set<number>([408, 429, 500, 502, 503, 504]);
 
-type HTTPError = Error & {
-    code?: string;
-    response?: {
-        status: number;
-        headers?: Headers;
-    };
-};
-
 const DEFAULT_OPTIONS: RetryOptions = {
     maxAttempts: 3,
     initialDelay: 1000,
@@ -59,7 +51,8 @@ export class Retry {
             !Number.isFinite(resolvedOptions.initialDelay) ||
             resolvedOptions.initialDelay <= 0 ||
             !Number.isFinite(resolvedOptions.maxDelay) ||
-            resolvedOptions.maxDelay <= 0
+            resolvedOptions.maxDelay <= 0 ||
+            resolvedOptions.maxDelay < resolvedOptions.initialDelay
         ) {
             throw new InvalidRetryOptionError();
         }
@@ -82,8 +75,9 @@ export class Retry {
         if (headers == null) return null;
         return headers.get(name) ?? null;
     }
-    #getRetryAfter(error: HTTPError) {
-        const headers = error.response?.headers;
+    #getRetryAfter(error: ResilienceError) {
+        const headers =
+            error.cause instanceof Response ? error.cause.headers : null;
         if (headers == null) {
             return null;
         }
@@ -130,7 +124,7 @@ export class Retry {
         initialDelay: number,
         prevDelay: number,
         attempt: number,
-        error: HTTPError,
+        error: ResilienceError,
     ) {
         const retryAfter = this.#getRetryAfter(error);
         if (retryAfter != null) {
@@ -172,7 +166,10 @@ export class Retry {
                 }
             } catch (err) {
                 const error = Retry.#ensureError(err);
-                const resilientError = Retry.#toResilienceError(error);
+                const resilientError = ResilienceError.from(
+                    error,
+                    this.#classifyError(error),
+                );
                 lastError = resilientError;
                 if (
                     attempt === this.#maxAttempts ||
@@ -197,32 +194,20 @@ export class Retry {
         }
         throw lastError;
     }
-    static #toResilienceError(value: Error) {
-        if (RETRYABLE_STATUS_CODES.has(value.cause?.status ?? "")) {
-            return new ResilienceError(
-                value.message,
-                value.code,
-                true,
-                true,
-                value.cause,
-            );
+    #classifyError(value: Error) {
+        if (value instanceof ResilienceError) {
+            return {
+                isRetryable: value.isRetryable,
+                isCircuitBreakerFailure: value.isCircuitBreakerFailure,
+            };
         }
-        if (RETRYABLE_ERRORS.has(value.cause?.code)) {
-            return new ResilienceError(
-                value.message,
-                value.cause.code,
-                true,
-                true,
-                value.cause,
-            );
+        if (
+            this.#retryableStatusCodes.has(value.cause?.status ?? "") ||
+            this.#retryableErrors.has(value.cause?.code)
+        ) {
+            return { isRetryable: true, isCircuitBreakerFailure: true };
         }
-        return new ResilienceError(
-            value.message,
-            value.cause?.code,
-            false,
-            false,
-            value.cause,
-        );
+        return { isRetryable: false, isCircuitBreakerFailure: false };
     }
     static #ensureError(value: unknown) {
         if (value instanceof Error) return value;

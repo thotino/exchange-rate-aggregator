@@ -3,6 +3,8 @@
  * @see https://oneuptime.com/blog/post/2026-01-06-nodejs-rate-limiting-no-external-services/view
  */
 
+import { InvalidRateLimiterOptionError } from "./errors/InvalidRateLimiterOptionError";
+
 interface RateLimitResult {
     allowed: boolean;
     remaining: number;
@@ -33,6 +35,9 @@ class FixedWindowRateLimiter implements RateLimiterInterface {
     #windows: Map<string, number> = new Map();
     #cleanupInterval: NodeJS.Timeout | null = null;
     constructor(options: WindowRateLimiterOptions) {
+        if(options.windowMS <= 0 || options.maxRequests < 1 ) {
+            throw new InvalidRateLimiterOptionError()
+        }
         this.#windowMS = options.windowMS;
         this.#maxRequests = options.maxRequests;
     }
@@ -84,6 +89,9 @@ class SlidingWindowLogLimiter implements RateLimiterInterface {
     #requestLogs: Map<string, number[]> = new Map();
     #cleanupInterval: NodeJS.Timeout | null = null;
     constructor(options: WindowRateLimiterOptions) {
+        if(options.windowMS <= 0 || options.maxRequests < 1 ) {
+            throw new InvalidRateLimiterOptionError()
+        }
         this.#windowMS = options.windowMS;
         this.#maxRequests = options.maxRequests;
     }
@@ -142,24 +150,30 @@ class SlidingWindowCounterLimiter implements RateLimiterInterface {
     #windowMS: number = 60_000;
     #maxRequests: number = 100;
     #windows: Map<string, number> = new Map();
-    // #cleanupInterval: NodeJS.Timeout | null = null;
+    #cleanupInterval: NodeJS.Timeout | null = null;
     constructor(options: WindowRateLimiterOptions) {
+        if(options.windowMS <= 0 || options.maxRequests < 1 ) {
+            throw new InvalidRateLimiterOptionError()
+        }
         this.#windowMS = options.windowMS;
         this.#maxRequests = options.maxRequests;
     }
     connect() {
-        // if (this.#cleanupInterval == null) {
-        //     this.#cleanupInterval = setInterval(
-        //         () => this.#cleanup(),
-        //         this.#windowMS,
-        //     );
-        // }
+        if (this.#cleanupInterval == null) {
+            this.#cleanupInterval = setInterval(
+                () => {
+                    const cleanupWindowStart = Math.floor(Date.now() / this.#windowMS) * this.#windowMS;
+                    this.#cleanup(cleanupWindowStart);
+                },
+                this.#windowMS,
+            );
+        }
     }
     close() {
-        // if (this.#cleanupInterval != null) {
-        //     clearInterval(this.#cleanupInterval);
-        //     this.#cleanupInterval = null;
-        // }
+        if (this.#cleanupInterval != null) {
+            clearInterval(this.#cleanupInterval);
+            this.#cleanupInterval = null;
+        }
     }
     get maxRequests() {
         return this.#maxRequests;
@@ -189,7 +203,6 @@ class SlidingWindowCounterLimiter implements RateLimiterInterface {
             };
         }
         this.#windows.set(currentKey, currentCount + 1);
-        this.#cleanup(currentWindowStart);
         return {
             allowed: true,
             remaining: Math.floor(this.#maxRequests - weightedCount - 1),
@@ -216,6 +229,9 @@ class TokenBucketLimiter implements RateLimiterInterface {
     #buckets: Map<string, Bucket> = new Map();
     #cleanupInterval: NodeJS.Timeout | null = null;
     constructor(options: TokenBucketLimiterOptions) {
+        if(options.bucketSize < 1 || options.refillRate <= 0 ) {
+            throw new InvalidRateLimiterOptionError()
+        }
         this.#bucketSize = options.bucketSize;
         this.#refillRate = options.refillRate;
     }

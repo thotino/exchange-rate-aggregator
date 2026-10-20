@@ -6,7 +6,7 @@ import { BulkheadAcquisitionAbortedError } from "./errors/BulkheadAcquisitionAbo
 import { BulkheadRejectedError } from "./errors/BulkheadRejectedError";
 import { BulkheadTimeoutError } from "./errors/BulkheadTimeoutError";
 import { GlobalTimeoutError } from "./errors/GlobalTimeoutError";
-import { InvalidBulkheadOptionsError } from "./errors/InvalidBulkheadOptionsError";
+import { InvalidBulkheadOptionError } from "./errors/InvalidBulkheadOptionError";
 import { logger } from "./logger";
 import type { BulkheadOptions } from "./types";
 
@@ -56,7 +56,7 @@ export class Bulkhead {
             !Number.isFinite(config.timeoutMS) ||
             config.timeoutMS <= 0
         ) {
-            throw new InvalidBulkheadOptionsError();
+            throw new InvalidBulkheadOptionError();
         }
         this.#maxConcurrent = config.maxConcurrent;
         this.#permits = config.maxConcurrent;
