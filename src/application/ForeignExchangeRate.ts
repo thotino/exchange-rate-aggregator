@@ -3,6 +3,10 @@ import {
     ItemState,
 } from "../infrastructure/cache/ExchangeRateCache";
 import { GlobalTimeoutError } from "../infrastructure/resilience/errors/GlobalTimeoutError";
+import { InvalidBulkheadOptionError } from "../infrastructure/resilience/errors/InvalidBulkheadOptionError";
+import { InvalidCircuitBreakerOptionError } from "../infrastructure/resilience/errors/InvalidCircuitBreakerOptionError";
+import { InvalidRetryOptionError } from "../infrastructure/resilience/errors/InvalidRetryOptionError";
+import { ResilienceError } from "../infrastructure/resilience/errors/ResilienceError";
 import type { Currencies } from "../interfaces/types";
 import type { RateProvider } from "../types/provider";
 
@@ -37,6 +41,13 @@ export class ForeignExchangeRate {
             return ratesA;
         } catch (error) {
             console.error({ error });
+            if (
+                error instanceof InvalidBulkheadOptionError ||
+                error instanceof InvalidCircuitBreakerOptionError ||
+                error instanceof InvalidRetryOptionError
+            ) {
+                throw error;
+            }
             if (globalController.signal.aborted) {
                 throw globalController.signal.reason ?? error;
             }
@@ -82,7 +93,7 @@ export class ForeignExchangeRate {
                 return rates;
             case ItemState.FRESH:
                 const freshRates = exchangeRateCache.get(cacheKey);
-                return { ...freshRates, source: "FRESH_CACHE"}
+                return { ...freshRates, source: "FRESH_CACHE" };
             case ItemState.STALE:
                 const staleRates = exchangeRateCache.get(cacheKey);
                 this.#refreshCacheWithFreshRates(
@@ -92,7 +103,7 @@ export class ForeignExchangeRate {
                 ).catch(err => {
                     console.error(err);
                 });
-                return {...staleRates, source: "STALE_CACHE"};
+                return { ...staleRates, source: "STALE_CACHE" };
         }
     }
 }

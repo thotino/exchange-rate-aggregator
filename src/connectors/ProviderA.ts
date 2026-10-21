@@ -1,3 +1,4 @@
+import { InvalidRateError } from "../errors/InvalidRateError";
 import { ProviderError } from "../errors/ProviderError";
 import { ProviderTimeoutError } from "../errors/ProviderTimeoutError";
 import { ProviderUnavailableError } from "../errors/ProviderUnavailableError";
@@ -5,7 +6,11 @@ import { Bulkhead } from "../infrastructure/resilience/Bulkhead";
 import { CircuitBreaker } from "../infrastructure/resilience/CircuitBreaker";
 import { JitterStatuses } from "../infrastructure/resilience/constants";
 import { RequestCoalescer } from "../infrastructure/resilience/RequestCoalescer";
-import { LogicalOperationResilientClient, PerAttemptResilientClient, ResilientClient } from "../infrastructure/resilience/ResilientClient";
+import {
+    LogicalOperationResilientClient,
+    PerAttemptResilientClient,
+    ResilientClient,
+} from "../infrastructure/resilience/ResilientClient";
 import { Retry } from "../infrastructure/resilience/Retry";
 import { Providers, type Currencies } from "../interfaces/types";
 import type {
@@ -20,31 +25,29 @@ export class ProviderA implements RateProvider {
     #client: ResilientClient;
     constructor(readonly url: string) {
         this.baseUrl = url;
-        this.#client = new PerAttemptResilientClient(
-            {
-                bulkheadOptions: {
-                    name: "ProviderA",
-                    maxConcurrent: 2,
-                    maxWaiting: 5,
-                    timeoutMS: 1000,
-                },
-                circuitBreakerOptions: {
-                    failureThreshold: 3,
-                    halfOpenRequests: 2,
-                    resetTimeout: 1000,
-                },
-                retryOptions: {
-                    maxAttempts: 3,
-                    factor: 1,
-                    initialDelay: 10,
-                    maxDelay: 50,
-                    timeout: 100,
-                    jitter: JitterStatuses.FULL,
-                    retryableErrors: [],
-                    retryableStatusCodes: [],
-                },
+        this.#client = new PerAttemptResilientClient({
+            bulkheadOptions: {
+                name: "ProviderA",
+                maxConcurrent: 2,
+                maxWaiting: 5,
+                timeoutMS: 1000,
             },
-        );
+            circuitBreakerOptions: {
+                failureThreshold: 3,
+                halfOpenRequests: 2,
+                resetTimeout: 1000,
+            },
+            retryOptions: {
+                maxAttempts: 3,
+                factor: 1,
+                initialDelay: 10,
+                maxDelay: 50,
+                timeout: 100,
+                jitter: JitterStatuses.FULL,
+                retryableErrors: [],
+                retryableStatusCodes: [],
+            },
+        });
     }
     async connect() {
         await this.#client.connect();
@@ -75,8 +78,12 @@ export class ProviderA implements RateProvider {
         });
         const receivedAt = Date.now();
         const expiresAt = receivedAt + 5 * 60 * 1000;
-        if(Number.isNaN(rates.rate) || !Number.isFinite(rates.rate) || rates.rate < 0) {
-            throw new Error("ERR_INVALID_RATE")
+        if (
+            Number.isNaN(rates.rate) ||
+            !Number.isFinite(rates.rate) ||
+            rates.rate < 0
+        ) {
+            throw new InvalidRateError();
         }
         return {
             from: sourceCurrency,

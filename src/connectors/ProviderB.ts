@@ -1,3 +1,4 @@
+import { InvalidRateError } from "../errors/InvalidRateError";
 import { ProviderError } from "../errors/ProviderError";
 import { ProviderTimeoutError } from "../errors/ProviderTimeoutError";
 import { ProviderUnavailableError } from "../errors/ProviderUnavailableError";
@@ -73,6 +74,13 @@ export class ProviderB implements RateProvider {
         });
         const receivedAt = Date.now();
         const expiresAt = receivedAt + 5 * 60 * 1000;
+        if (
+                    Number.isNaN(rates.rate) ||
+                    !Number.isFinite(rates.rate) ||
+                    rates.rate < 0
+                ) {
+                    throw new InvalidRateError();
+                }
         return {
             from: sourceCurrency,
             to: targetCurrency,
