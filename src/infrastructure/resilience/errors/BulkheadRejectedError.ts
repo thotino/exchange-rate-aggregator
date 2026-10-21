@@ -5,7 +5,7 @@ export class BulkheadRejectedError extends ResilienceError {
     constructor(name: string, maxConcurrent: number, waitLength: number) {
         const isCircuitBreakerFailure: boolean = false;
         const isRetryable: boolean = false;
-        const code = "BULKHEAD_REJECTED";
+        const code = "ERR_BULKHEAD_REJECTED";
         const message = "Bulkhead is full";
         super(message, code, isRetryable, isCircuitBreakerFailure, null);
         this.value = { name, maxConcurrent, waitLength };
