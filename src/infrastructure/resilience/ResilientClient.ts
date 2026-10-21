@@ -5,17 +5,15 @@ import { Retry } from "./Retry";
 import type { ResilienceClientConfig } from "./types";
 
 export abstract class ResilientClient {
-    readonly retry: Retry
-    readonly bulkhead: Bulkhead
-    readonly circuitBreaker: CircuitBreaker
-    readonly requestCoalescer: RequestCoalescer
-    constructor(
-        options: ResilienceClientConfig
-    ) {
-        this.retry = new Retry(options.retryOptions)
-        this.bulkhead = new Bulkhead(options.bulkheadOptions)
-        this.circuitBreaker = new CircuitBreaker(options.circuitBreakerOptions)
-        this.requestCoalescer = new RequestCoalescer()
+    readonly retry: Retry;
+    readonly bulkhead: Bulkhead;
+    readonly circuitBreaker: CircuitBreaker;
+    readonly requestCoalescer: RequestCoalescer;
+    constructor(options: ResilienceClientConfig) {
+        this.retry = new Retry(options.retryOptions);
+        this.bulkhead = new Bulkhead(options.bulkheadOptions);
+        this.circuitBreaker = new CircuitBreaker(options.circuitBreakerOptions);
+        this.requestCoalescer = new RequestCoalescer();
     }
     async connect() {
         await Promise.all([
@@ -43,8 +41,8 @@ export class LogicalOperationResilientClient extends ResilientClient {
             this.circuitBreaker.execute(() =>
                 this.retry.execute(
                     ({ signal }) => {
-                        return this.bulkhead.execute(() => fn({ signal }), {
-                            cancelSignal: options.cancelSignal,
+                        return this.bulkhead.execute(fn, {
+                            signal: signal,
                         });
                     },
                     { cancelSignal: options.cancelSignal },
@@ -63,8 +61,8 @@ export class PerAttemptResilientClient extends ResilientClient {
             this.retry.execute(
                 ({ signal }) => {
                     return this.circuitBreaker.execute(() =>
-                        this.bulkhead.execute(() => fn({ signal }), {
-                            cancelSignal: options.cancelSignal,
+                        this.bulkhead.execute(fn, {
+                            signal: signal,
                         }),
                     );
                 },

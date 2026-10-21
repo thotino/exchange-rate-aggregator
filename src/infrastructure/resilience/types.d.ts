@@ -4,6 +4,7 @@ export interface ResilienceErrorInterface {
     readonly code: string;
     readonly message: string;
 }
+export type ErrorClassification = Pick<ResilienceErrorInterface, "isRetryable" | "isCircuitBreakerFailure">
 
 export interface RetryOptions {
     readonly maxAttempts: number;

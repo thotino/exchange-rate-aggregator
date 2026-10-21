@@ -16,6 +16,14 @@ function createBulkhead(options: Partial<BulkheadOptions> = {}) {
     return new Bulkhead({ ...defaultOptions, ...options });
 }
 
+function deferred<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    const promise = new Promise<T>((resolvePromise) => {
+        resolve = resolvePromise;
+    });
+    return { promise, resolve };
+}
+
 describe("Bulkhead", () => {
     afterEach(() => {
         vi.useRealTimers();
@@ -38,7 +46,7 @@ describe("Bulkhead", () => {
                 );
                 await operationGate;
                 activeOperations--;
-            }, { cancelSignal: new AbortController().signal }),
+            }, { signal: new AbortController().signal }),
         );
 
         await Promise.resolve();
@@ -60,21 +68,24 @@ describe("Bulkhead", () => {
             releaseRunningOperation = resolve;
         });
         const running = bulkhead.execute(() => runningOperation, {
-            cancelSignal: new AbortController().signal,
+            signal: new AbortController().signal,
         });
         const waiting = Array.from({ length: 2 }, () =>
             bulkhead.execute(async () => undefined, {
-                cancelSignal: new AbortController().signal,
+                signal: new AbortController().signal,
             }),
         );
 
+        const rejectedOperation = vi.fn(async () => "should not run");
         await expect(
-            bulkhead.execute(async () => "should not run", {
-                cancelSignal: new AbortController().signal,
+            bulkhead.execute(rejectedOperation, {
+                signal: new AbortController().signal,
             }),
         ).rejects.toBeInstanceOf(BulkheadRejectedError);
         expect(bulkhead.getMetrics().waitingCount).toBe(2);
         expect(bulkhead.getMetrics().rejected).toBe(1);
+        expect(bulkhead.getMetrics().availablePermits).toBe(0);
+        expect(rejectedOperation).not.toHaveBeenCalled();
 
         releaseRunningOperation();
         await Promise.all([running, ...waiting]);
@@ -86,7 +97,7 @@ describe("Bulkhead", () => {
         const cancelSignal = new AbortController().signal;
 
         await expect(
-            bulkhead.execute(async () => "ok", { cancelSignal }),
+            bulkhead.execute(async () => "ok", { signal: cancelSignal }),
         ).resolves.toBe("ok");
         expect(bulkhead.getMetrics().availablePermits).toBe(1);
 
@@ -94,7 +105,7 @@ describe("Bulkhead", () => {
         await expect(
             bulkhead.execute(async () => {
                 throw failure;
-            }, { cancelSignal }),
+            }, { signal: cancelSignal }),
         ).rejects.toBe(failure);
         expect(bulkhead.getMetrics().availablePermits).toBe(1);
         expect(bulkhead.getMetrics()).toMatchObject({ completed: 1, failed: 1 });
@@ -102,17 +113,17 @@ describe("Bulkhead", () => {
 
     it("never runs an operation whose queue wait timed out", async () => {
         vi.useFakeTimers();
-        const bulkhead = createBulkhead({ timeoutMS: 10 });
+        const bulkhead = createBulkhead({ maxWaiting: 1, timeoutMS: 10 });
         let releaseRunningOperation!: () => void;
         const runningOperation = new Promise<void>((resolve) => {
             releaseRunningOperation = resolve;
         });
         const running = bulkhead.execute(() => runningOperation, {
-            cancelSignal: new AbortController().signal,
+            signal: new AbortController().signal,
         });
         const queuedOperation = vi.fn(async () => "should not run");
         const waiting = bulkhead.execute(queuedOperation, {
-            cancelSignal: new AbortController().signal,
+            signal: new AbortController().signal,
         });
 
         const rejection = expect(waiting).rejects.toBeInstanceOf(
@@ -120,12 +131,56 @@ describe("Bulkhead", () => {
         );
         await vi.advanceTimersByTimeAsync(10);
         await rejection;
+        expect(bulkhead.getMetrics().waitingCount).toBe(0);
 
+        const replacementOperation = vi.fn(async () => "replacement");
+        const replacement = bulkhead.execute(replacementOperation, {
+            signal: new AbortController().signal,
+        });
+        expect(bulkhead.getMetrics().waitingCount).toBe(1);
         releaseRunningOperation();
-        await running;
+        await Promise.all([running, replacement]);
 
         expect(queuedOperation).not.toHaveBeenCalled();
+        expect(replacementOperation).toHaveBeenCalledOnce();
+        expect(bulkhead.getMetrics().waitingCount).toBe(0);
         expect(bulkhead.getMetrics().timedOut).toBe(1);
+    });
+
+    it("removes an aborted waiter and lets another operation use its queue slot", async () => {
+        const bulkhead = createBulkhead({ maxWaiting: 1 });
+        const runningWork = deferred<void>();
+        const running = bulkhead.execute(() => runningWork.promise, {
+            signal: new AbortController().signal,
+        });
+        const controller = new AbortController();
+        const abortedOperation = vi.fn(async () => "should not run");
+        const waiting = bulkhead.execute(abortedOperation, {
+            signal: controller.signal,
+        });
+
+        expect(bulkhead.getMetrics().waitingCount).toBe(1);
+        controller.abort(new Error("caller cancelled"));
+        await expect(waiting).rejects.toBeInstanceOf(Error);
+
+        expect(bulkhead.getMetrics().waitingCount).toBe(0);
+        expect(bulkhead.getMetrics().availablePermits).toBe(0);
+        expect(abortedOperation).not.toHaveBeenCalled();
+
+        const replacementOperation = vi.fn(async () => "replacement");
+        const replacement = bulkhead.execute(replacementOperation, {
+            signal: new AbortController().signal,
+        });
+        expect(bulkhead.getMetrics().waitingCount).toBe(1);
+
+        runningWork.resolve();
+        await Promise.all([running, replacement]);
+
+        expect(replacementOperation).toHaveBeenCalledOnce();
+        expect(bulkhead.getMetrics()).toMatchObject({
+            availablePermits: 1,
+            waitingCount: 0,
+        });
     });
 
     it("does not count bulkhead rejection as a circuit breaker failure", async () => {
@@ -142,7 +197,7 @@ describe("Bulkhead", () => {
         const execute = () =>
             circuitBreaker.execute(() =>
                 bulkhead.execute(() => runningOperation, {
-                    cancelSignal: new AbortController().signal,
+                    signal: new AbortController().signal,
                 }),
             );
         const running = execute();
@@ -164,21 +219,27 @@ describe("Bulkhead", () => {
         const backgroundWork = new Promise<void>((resolve) => {
             finishBackgroundWork = resolve;
         });
+        let markOperationStarted!: () => void;
+        const operationStarted = new Promise<void>((resolve) => {
+            markOperationStarted = resolve;
+        });
         const operation = bulkhead.execute(
             async ({ signal }) => {
+                markOperationStarted();
                 await backgroundWork;
                 return signal.aborted;
             },
-            { cancelSignal: controller.signal },
+            { signal: controller.signal },
         );
 
+        await operationStarted;
         controller.abort(new Error("operation timed out"));
         await Promise.resolve();
 
         expect(bulkhead.getMetrics().availablePermits).toBe(0);
         await expect(
             bulkhead.execute(async () => "should not run", {
-                cancelSignal: new AbortController().signal,
+                signal: new AbortController().signal,
             }),
         ).rejects.toBeInstanceOf(BulkheadRejectedError);
 

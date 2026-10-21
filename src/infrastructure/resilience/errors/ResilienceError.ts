@@ -1,4 +1,4 @@
-import type { ResilienceErrorInterface } from "../types";
+import type { ErrorClassification, ResilienceErrorInterface } from "../types";
 
 export class ResilienceError extends Error implements ResilienceErrorInterface {
     isCircuitBreakerFailure: boolean;
@@ -21,7 +21,7 @@ export class ResilienceError extends Error implements ResilienceErrorInterface {
 
     static from(
         error: Error,
-        options: { isRetryable: boolean; isCircuitBreakerFailure: boolean },
+        options: ErrorClassification,
     ) {
         if (error instanceof ResilienceError) return error;
         const code = error.cause instanceof Response ? error.cause.statusText : "ERR_UNEXPECTED_ERROR"

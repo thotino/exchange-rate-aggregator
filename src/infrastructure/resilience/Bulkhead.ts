@@ -5,8 +5,8 @@
 import { BulkheadAcquisitionAbortedError } from "./errors/BulkheadAcquisitionAbortedError";
 import { BulkheadRejectedError } from "./errors/BulkheadRejectedError";
 import { BulkheadTimeoutError } from "./errors/BulkheadTimeoutError";
-import { GlobalTimeoutError } from "./errors/GlobalTimeoutError";
 import { InvalidBulkheadOptionError } from "./errors/InvalidBulkheadOptionError";
+import { ResilienceError } from "./errors/ResilienceError";
 import { logger } from "./logger";
 import type { BulkheadOptions } from "./types";
 
@@ -64,7 +64,13 @@ export class Bulkhead {
         this.#waitTimeoutMS = config.timeoutMS;
     }
 
-    async #acquire({ cancelSignal }: { cancelSignal: AbortSignal }) {
+    async #acquire({ signal }: { signal: AbortSignal }) {
+        if (signal.aborted) {
+            if (signal.reason instanceof ResilienceError) {
+                throw signal.reason;
+            }
+            throw new BulkheadAcquisitionAbortedError(signal.reason);
+        }
         if (this.#permits > 0) {
             this.#permits--;
             this.#metrics.acquired++;
@@ -83,8 +89,14 @@ export class Bulkhead {
             const onAbort = () => {
                 if (!this.#removeWaiter(waiter)) return;
                 this.#cleanupWaiter(waiter);
-                const reason = cancelSignal.reason;
-                reject(new BulkheadAcquisitionAbortedError(reason));
+                const reason = signal.reason;
+                const abortError = ResilienceError.from(
+                    new Error("Bulkhead acquisition aborted", {
+                        cause: reason,
+                    }),
+                    Bulkhead.#classifyError(reason),
+                );
+                reject(abortError);
             };
             const timer = setTimeout(() => {
                 if (!this.#removeWaiter(waiter)) return;
@@ -94,9 +106,12 @@ export class Bulkhead {
                     new BulkheadTimeoutError(this.#name, this.#waitTimeoutMS),
                 );
             }, this.#waitTimeoutMS);
-            waiter = { resolve, reject, timer, cancelSignal, onAbort };
+            waiter = { resolve, reject, timer, cancelSignal: signal, onAbort };
             this.#waitQueue.push(waiter);
-            cancelSignal.addEventListener("abort", onAbort, { once: true });
+            signal.addEventListener("abort", onAbort, { once: true });
+            if (signal.aborted) {
+                onAbort();
+            }
         });
     }
     #removeWaiter(waiter: Waiter) {
@@ -137,17 +152,35 @@ export class Bulkhead {
             this.#metricsInterval = null;
         }
     }
+    static #classifyError(reason: any) {
+        if (reason instanceof ResilienceError) {
+            return {
+                isRetryable: reason.isRetryable,
+                isCircuitBreakerFailure: reason.isCircuitBreakerFailure,
+            };
+        }
+        return { isRetryable: false, isCircuitBreakerFailure: false };
+    }
     async execute<T>(
         fn: (options: { signal: AbortSignal }) => Promise<T>,
-        options: { cancelSignal: AbortSignal },
+        options: { signal: AbortSignal },
     ) {
-        if (options.cancelSignal.aborted) {
-            throw new GlobalTimeoutError();
+        if (options.signal.aborted) {
+            throw ResilienceError.from(
+                new Error("", { cause: options.signal.reason }),
+                Bulkhead.#classifyError(options.signal.reason),
+            );
         }
-        await this.#acquire({ cancelSignal: options.cancelSignal });
+        await this.#acquire({ signal: options.signal });
         let success = true;
         try {
-            return await fn({ signal: options.cancelSignal });
+            if (options.signal.aborted) {
+                throw ResilienceError.from(
+                    new Error("", { cause: options.signal.reason }),
+                    Bulkhead.#classifyError(options.signal.reason),
+                );
+            }
+            return await fn({ signal: options.signal });
         } catch (error) {
             success = false;
             throw error;
@@ -167,12 +200,12 @@ export class Bulkhead {
 
 export class BulkheadRegistry {
     #bulheads: Map<string, Bulkhead> = new Map();
-    register(config: BulkheadOptions) {
+    async register(config: BulkheadOptions) {
         if (this.#bulheads.has(config.name)) {
             throw new Error("ERR_BULKHEAD_ALREADY_REGISTERED");
         }
         const bulkhead = new Bulkhead(config);
-        bulkhead.connect();
+        await bulkhead.connect();
         this.#bulheads.set(config.name, bulkhead);
         return bulkhead;
     }
@@ -189,9 +222,9 @@ export class BulkheadRegistry {
         }
         return metrics;
     }
-    reset() {
+    async reset() {
         for (const [name, bulkhead] of this.#bulheads) {
-            bulkhead.close();
+            await bulkhead.close();
         }
         this.#bulheads.clear();
     }

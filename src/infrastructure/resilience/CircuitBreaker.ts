@@ -108,7 +108,7 @@ export class CircuitBreaker {
         }
         if (
             FAILURE_STATUS_CODES.has(error.cause.status) ||
-            FAILURE_ERRORS.has(error.code)
+            FAILURE_ERRORS.has(error.cause.code)
         ) {
             return { isRetryable: true, isCircuitBreakerFailure: true };
         }
