@@ -14,7 +14,14 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown) {
     });
     response.end(JSON.stringify(body));
 }
-const ERROR_MAP = new Map([["ERR_OPERATION_TIMEOUT", 408]]);
+const ERROR_MAP = new Map([
+    ["ERR_OPERATION_TIMEOUT", 504],
+    ["ERR_CIRCUIT_BREAKER_OPEN", 503],
+    ["ERR_BULKHEAD_REJECTED", 504],
+    ["ERR_BULKHEAD_TIMED_OUT", 504],
+    ["ERR_BULKHEAD_ACQUISITION_ABORTED", 504],
+    ["ERR_INVALID_RATE", 502]
+]);
 class WebserverError extends Error {
     statusCode: number = 500;
     code: string = "ERR_UNEXPECTED_ERROR";
@@ -64,8 +71,6 @@ export class Webserver {
     }
 
     async stop(): Promise<void> {
-        await this.exchangeRate.close();
-        this.#rateLimiter.close();
         if (!this.#server.listening) {
             return;
         }
@@ -79,6 +84,8 @@ export class Webserver {
                 resolve();
             });
         });
+        await this.exchangeRate.close();
+        this.#rateLimiter.close();
     }
 
     async #handleRequest(
