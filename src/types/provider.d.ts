@@ -5,9 +5,10 @@ export type Rate = {
     to: Currencies;
     rate: number;
     provider: Providers;
-    fetchedAt: number;
+    requestedAt: number;
     receivedAt: number;
     expiresAt: number;
+    providerUpdatedAt?: number
 };
 export interface RateProvider extends BaseConnectorInterface {
     baseUrl: string;

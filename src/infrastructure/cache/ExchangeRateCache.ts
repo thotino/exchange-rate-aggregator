@@ -1,9 +1,10 @@
 import { TTLCache, type TTLCacheOptions } from "@isaacs/ttlcache";
+import type { Rate } from "../../types/provider";
 
 type ExchangeRateCacheoptions = TTLCacheOptions<string, unknown> & {
     staleTtl?: number;
 };
-type Item = unknown;
+type Item = Rate;
 export enum ItemState {
     FRESH = "fresh",
     STALE = "stale",

@@ -14,10 +14,10 @@ export class ForeignExchangeRate {
     ) {}
 
     async connect() {
-        await [this.providerA.connect(), this.providerB.connect()];
+        await Promise.all([this.providerA.connect(), this.providerB.connect()]);
     }
     async close() {
-        await [this.providerA.close(), this.providerB.close()];
+        await Promise.all([this.providerA.close(), this.providerB.close()]);
     }
 
     async #processWithProviders(
@@ -81,7 +81,8 @@ export class ForeignExchangeRate {
                 exchangeRateCache.set(cacheKey, rates);
                 return rates;
             case ItemState.FRESH:
-                return exchangeRateCache.get(cacheKey);
+                const freshRates = exchangeRateCache.get(cacheKey);
+                return { ...freshRates, source: "FRESH_CACHE"}
             case ItemState.STALE:
                 const staleRates = exchangeRateCache.get(cacheKey);
                 this.#refreshCacheWithFreshRates(
@@ -91,7 +92,7 @@ export class ForeignExchangeRate {
                 ).catch(err => {
                     console.error(err);
                 });
-                return staleRates;
+                return {...staleRates, source: "STALE_CACHE"};
         }
     }
 }
