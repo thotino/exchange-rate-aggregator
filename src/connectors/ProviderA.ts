@@ -36,7 +36,7 @@ export class ProviderA implements RateProvider {
                 retryOptions: {
                     maxAttempts: 3,
                     factor: 1,
-                    initialDelay: 100,
+                    initialDelay: 10,
                     maxDelay: 50,
                     timeout: 100,
                     jitter: JitterStatuses.FULL,
@@ -68,19 +68,22 @@ export class ProviderA implements RateProvider {
             }
             return response.json();
         };
-        const fetchedAt = Date.now();
+        const requestedAt = Date.now();
         const coalescerKey = `GetRates::${Providers.PROVIDER_A}-${sourceCurrency}-${targetCurrency}`;
         const rates = await this.#client.execute(coalescerKey, fn, {
             cancelSignal: options.cancelSignal,
         });
         const receivedAt = Date.now();
         const expiresAt = receivedAt + 5 * 60 * 1000;
+        if(Number.isNaN(rates.rate) || !Number.isFinite(rates.rate) || rates.rate < 0) {
+            throw new Error("ERR_INVALID_RATE")
+        }
         return {
             from: sourceCurrency,
             to: targetCurrency,
             rate: rates.rate,
             provider: Providers.PROVIDER_A,
-            fetchedAt,
+            requestedAt,
             receivedAt,
             expiresAt,
         };
