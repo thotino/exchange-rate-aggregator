@@ -32,9 +32,7 @@ export class CircuitBreaker {
     #lastFailure: number | null = null;
     #halfOpenAttemps = 0;
     #stateInterval: NodeJS.Timeout | null = null;
-    constructor(
-        options: Partial<CircuitBreakerOptions>,
-    ) {
+    constructor(options: Partial<CircuitBreakerOptions>) {
         const resolvedOptions = {
             ...DEFAULT_CIRCUIT_BREAKER_OPTIONS,
             ...options,
@@ -90,33 +88,18 @@ export class CircuitBreaker {
             const result = await fn();
             this.#onSuccess();
             return result;
-        } catch (error) {
+        } catch (err) {
+            const error = ResilienceError.ensureError(err);
             logger.error("[CircuitBreaker]", { error });
             const normalizedError = ResilienceError.from(
                 error,
-                CircuitBreaker.classifyError(error),
+                ResilienceError.classifyError(error),
             );
             if (CircuitBreaker.#isFailure(normalizedError)) {
                 this.#onFailure();
             }
-            throw error;
+            throw normalizedError;
         }
-    }
-
-    static classifyError(error: Error) {
-        if (error instanceof ResilienceError) {
-            return {
-                isRetryable: error.isRetryable,
-                isCircuitBreakerFailure: error.isCircuitBreakerFailure,
-            };
-        }
-        if (
-            FAILURE_STATUS_CODES.has(error.cause.status) ||
-            FAILURE_ERRORS.has(error.cause.code)
-        ) {
-            return { isRetryable: true, isCircuitBreakerFailure: true };
-        }
-        return { isRetryable: true, isCircuitBreakerFailure: true };
     }
 
     #onSuccess() {

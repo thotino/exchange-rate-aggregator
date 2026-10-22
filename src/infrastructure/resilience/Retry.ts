@@ -169,13 +169,17 @@ export class Retry {
                     });
                 } finally {
                     clearTimeout(timer);
-                    this.#metrics.totalAttemptsDurationMs += performance.now() - t0;
+                    this.#metrics.totalAttemptsDurationMs +=
+                        performance.now() - t0;
                 }
             } catch (err) {
-                const error = Retry.#ensureError(err);
+                const error = ResilienceError.ensureError(err);
                 const resilientError = ResilienceError.from(
                     error,
-                    this.#classifyError(error),
+                    ResilienceError.classifyError(error, {
+                        retryableErrors: this.#retryableErrors,
+                        retryableStatusCodes: this.#retryableStatusCodes,
+                    }),
                 );
                 lastError = resilientError;
                 if (
@@ -200,30 +204,6 @@ export class Retry {
             }
         }
         throw lastError;
-    }
-    #classifyError(value: Error) {
-        if (value instanceof ResilienceError) {
-            return {
-                isRetryable: value.isRetryable,
-                isCircuitBreakerFailure: value.isCircuitBreakerFailure,
-            };
-        }
-        if (
-            this.#retryableStatusCodes.has(value.cause?.status ?? "") ||
-            this.#retryableErrors.has(value.cause?.code)
-        ) {
-            return { isRetryable: true, isCircuitBreakerFailure: true };
-        }
-        return { isRetryable: false, isCircuitBreakerFailure: false };
-    }
-    static #ensureError(value: unknown) {
-        if (value instanceof Error) return value;
-        let stringifiedValue = "";
-        try {
-            stringifiedValue = JSON.stringify(value);
-        } catch (error) {}
-        const error = new Error(stringifiedValue);
-        return error;
     }
     getMetrics() {
         return {

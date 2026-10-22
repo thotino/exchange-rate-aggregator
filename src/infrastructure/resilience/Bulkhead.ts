@@ -95,7 +95,8 @@ export class Bulkhead {
                     new Error("Bulkhead acquisition aborted", {
                         cause: reason,
                     }),
-                    Bulkhead.#classifyError(reason),
+                    ResilienceError.classifyError(reason)
+                    // Bulkhead.#classifyError(reason),
                 );
                 reject(abortError);
             };
@@ -153,15 +154,6 @@ export class Bulkhead {
             this.#metricsInterval = null;
         }
     }
-    static #classifyError(reason: unknown) {
-        if (reason instanceof ResilienceError) {
-            return {
-                isRetryable: reason.isRetryable,
-                isCircuitBreakerFailure: reason.isCircuitBreakerFailure,
-            };
-        }
-        return { isRetryable: false, isCircuitBreakerFailure: false };
-    }
     async execute<T>(
         fn: (options: { signal: AbortSignal }) => Promise<T>,
         options: { signal: AbortSignal },
@@ -169,7 +161,7 @@ export class Bulkhead {
         if (options.signal.aborted) {
             throw ResilienceError.from(
                 new Error("", { cause: options.signal.reason }),
-                Bulkhead.#classifyError(options.signal.reason),
+                ResilienceError.classifyError(options.signal.reason),
             );
         }
         await this.#acquire({ signal: options.signal });
@@ -178,7 +170,7 @@ export class Bulkhead {
             if (options.signal.aborted) {
                 throw ResilienceError.from(
                     new Error("", { cause: options.signal.reason }),
-                    Bulkhead.#classifyError(options.signal.reason),
+                    ResilienceError.classifyError(options.signal.reason),
                 );
             }
             return await fn({ signal: options.signal });

@@ -58,45 +58,57 @@ describe("RequestCoalescer", () => {
         expect(operation).toHaveBeenCalledTimes(1);
     });
 
-    it("does not apply a later coalesced request's cancellation signal to the shared operation", async () => {
+    it("keeps cancellation signals independent for separate client operations", async () => {
         const client = createClient();
-        const gate = deferred<{ rate: number }>();
+        const firstGate = deferred<{ rate: number }>();
+        const laterGate = deferred<{ rate: number }>();
         const firstController = new AbortController();
         const laterController = new AbortController();
-        const operationStarted = deferred<void>();
-        let operationSignal!: AbortSignal;
-        const operation = vi.fn(({ signal }: { signal: AbortSignal }) => {
-            operationSignal = signal;
-            operationStarted.resolve(undefined);
-            return gate.promise;
+        const firstOperationStarted = deferred<void>();
+        const laterOperationStarted = deferred<void>();
+        let firstOperationSignal!: AbortSignal;
+        let laterOperationSignal!: AbortSignal;
+        const firstOperation = vi.fn(({ signal }: { signal: AbortSignal }) => {
+            firstOperationSignal = signal;
+            firstOperationStarted.resolve(undefined);
+            return firstGate.promise;
         });
-        const laterOperation = vi.fn(async () => ({ rate: 99 }));
+        const laterOperation = vi.fn(({ signal }: { signal: AbortSignal }) => {
+            laterOperationSignal = signal;
+            laterOperationStarted.resolve(undefined);
+            return laterGate.promise;
+        });
 
-        const first = client.execute("same-key", operation, {
+        const first = client.execute(firstOperation, {
             cancelSignal: firstController.signal,
         });
-        const later = client.execute("same-key", laterOperation, {
+        const later = client.execute(laterOperation, {
             cancelSignal: laterController.signal,
         });
-        await operationStarted.promise;
+        await Promise.all([
+            firstOperationStarted.promise,
+            laterOperationStarted.promise,
+        ]);
         laterController.abort();
 
-        expect(operation).toHaveBeenCalledTimes(1);
-        expect(laterOperation).not.toHaveBeenCalled();
-        expect(operationSignal.aborted).toBe(false);
+        expect(firstOperation).toHaveBeenCalledTimes(1);
+        expect(laterOperation).toHaveBeenCalledTimes(1);
+        expect(firstOperationSignal.aborted).toBe(false);
+        expect(laterOperationSignal.aborted).toBe(true);
 
-        const result = { rate: 1.25 };
-        gate.resolve(result);
+        const firstValue = { rate: 1.25 };
+        const laterValue = { rate: 2.5 };
+        firstGate.resolve(firstValue);
+        laterGate.resolve(laterValue);
         const [firstResult, laterResult] = await Promise.all([first, later]);
 
-        expect(firstResult).toBe(result);
-        expect(laterResult).toBe(result);
+        expect(firstResult).toBe(firstValue);
+        expect(laterResult).toBe(laterValue);
     });
 
-    it("shares cancellation of the initiating request, then permits a new request for that key", async () => {
+    it("propagates cancellation and permits a later operation", async () => {
         const client = createClient();
         const initiatingController = new AbortController();
-        const otherController = new AbortController();
         const operationStarted = deferred<void>();
         const abortedOperation = vi.fn(
             ({ signal }: { signal: AbortSignal }) =>
@@ -116,28 +128,22 @@ describe("RequestCoalescer", () => {
         );
 
         const initiatingRequest = client.execute(
-            "same-key",
             abortedOperation,
             { cancelSignal: initiatingController.signal },
         );
-        const otherRequest = client.execute("same-key", abortedOperation, {
-            cancelSignal: otherController.signal,
-        });
 
         await operationStarted.promise;
         initiatingController.abort();
-        const [initiatingError, otherError] = await Promise.all([
-            initiatingRequest.catch((error: unknown) => error),
-            otherRequest.catch((error: unknown) => error),
-        ]);
+        const initiatingError = await initiatingRequest.catch(
+            (error: unknown) => error,
+        );
 
         expect(initiatingError).toBeInstanceOf(ResilienceError);
-        expect(otherError).toBe(initiatingError);
         expect(abortedOperation).toHaveBeenCalledTimes(1);
 
         const nextOperation = vi.fn(async () => "next result");
         await expect(
-            client.execute("same-key", nextOperation, {
+            client.execute(nextOperation, {
                 cancelSignal: new AbortController().signal,
             }),
         ).resolves.toBe("next result");

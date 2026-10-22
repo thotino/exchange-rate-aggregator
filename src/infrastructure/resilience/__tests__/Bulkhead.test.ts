@@ -3,6 +3,7 @@ import { Bulkhead } from "../Bulkhead";
 import { CircuitBreaker } from "../CircuitBreaker";
 import { BulkheadRejectedError } from "../errors/BulkheadRejectedError";
 import { BulkheadTimeoutError } from "../errors/BulkheadTimeoutError";
+import { ResilienceError } from "../errors/ResilienceError";
 
 function createBulkhead() {
     return new Bulkhead({});
@@ -103,6 +104,33 @@ describe("Bulkhead", () => {
         ).rejects.toBe(failure);
         expect(bulkhead.getMetrics().availablePermits).toBe(10);
         expect(bulkhead.getMetrics()).toMatchObject({ completed: 1, failed: 1 });
+    });
+
+    it("classifies an already-aborted signal with an ordinary Error reason", async () => {
+        const bulkhead = createBulkhead();
+        const controller = new AbortController();
+        const reason = new Error("caller cancelled");
+        controller.abort(reason);
+        const operation = vi.fn(async () => "must not run");
+
+        const rejection = await bulkhead
+            .execute(operation, { signal: controller.signal })
+            .catch((error: unknown) => error);
+
+        expect(rejection).toBeInstanceOf(ResilienceError);
+        expect(rejection).not.toBeInstanceOf(TypeError);
+        expect(rejection).toMatchObject({
+            isRetryable: false,
+            isCircuitBreakerFailure: false,
+        });
+        expect(rejection).toHaveProperty("cause.cause", reason);
+        expect(operation).not.toHaveBeenCalled();
+        expect(bulkhead.getMetrics()).toMatchObject({
+            availablePermits: 10,
+            acquired: 0,
+            completed: 0,
+            failed: 0,
+        });
     });
 
     it("never runs an operation whose queue wait timed out", async () => {

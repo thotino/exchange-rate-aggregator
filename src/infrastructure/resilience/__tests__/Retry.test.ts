@@ -179,7 +179,7 @@ describe("Retry", () => {
             {
                 options: { retryableStatusCodes: [418] },
                 error: new Error("custom transient status", {
-                    cause: { status: 418 },
+                    cause: new Response(null, { status: 418 }),
                 }),
             },
         ];
@@ -281,15 +281,20 @@ describe("Retry", () => {
             throw error;
         });
 
-        await expect(
-            retry.execute(operation, {
+        const rejection = await retry
+            .execute(operation, {
                 cancelSignal: new AbortController().signal,
-            }),
-        ).rejects.toMatchObject({
+            })
+            .catch((reason: unknown) => reason);
+
+        expect(rejection).toBeInstanceOf(ResilienceError);
+        expect(rejection).not.toBeInstanceOf(TypeError);
+        expect(rejection).toMatchObject({
             message: "invalid request",
             isRetryable: false,
             isCircuitBreakerFailure: false,
         });
+        expect(rejection).toHaveProperty("cause", error);
         expect(operation).toHaveBeenCalledTimes(1);
     });
 

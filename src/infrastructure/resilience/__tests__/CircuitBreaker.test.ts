@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CircuitBreaker } from "../CircuitBreaker";
 import { CircuitBreakerHalfOpenError } from "../errors/CircuitBreakerHalfOpenError";
 import { CircuitBreakerOpenError } from "../errors/CircuitBreakerOpenError";
+import { ResilienceError } from "../errors/ResilienceError";
 import type { CircuitBreakerOptions } from "../types";
 
 const defaultOptions: CircuitBreakerOptions = {
@@ -15,7 +16,7 @@ function createCircuitBreaker(options: Partial<CircuitBreakerOptions> = {}) {
 }
 
 function serviceFailure(message: string) {
-    return new Error(message, { cause: { status: 503 } });
+    return new Error(message, { cause: new Response(null, { status: 503 }) });
 }
 
 describe("CircuitBreaker", () => {
@@ -33,7 +34,12 @@ describe("CircuitBreaker", () => {
             circuitBreaker.execute(async () => {
                 throw failure;
             }),
-        ).rejects.toBe(failure);
+        ).rejects.toMatchObject({
+            message: failure.message,
+            isRetryable: true,
+            isCircuitBreakerFailure: true,
+            cause: failure,
+        });
         expect(circuitBreaker.getState()).toEqual({
             state: "open",
             failures: 1,
@@ -81,7 +87,12 @@ describe("CircuitBreaker", () => {
             circuitBreaker.execute(async () => {
                 throw firstFailure;
             }),
-        ).rejects.toBe(firstFailure);
+        ).rejects.toMatchObject({
+            message: firstFailure.message,
+            isRetryable: true,
+            isCircuitBreakerFailure: true,
+            cause: firstFailure,
+        });
         expect(circuitBreaker.getState()).toEqual({
             state: "closed",
             failures: 1,
@@ -94,11 +105,41 @@ describe("CircuitBreaker", () => {
             circuitBreaker.execute(async () => {
                 throw secondFailure;
             }),
-        ).rejects.toBe(secondFailure);
+        ).rejects.toMatchObject({
+            message: secondFailure.message,
+            isRetryable: true,
+            isCircuitBreakerFailure: true,
+            cause: secondFailure,
+        });
         expect(circuitBreaker.getState()).toEqual({
             state: "open",
             failures: 2,
             lastFailure: 10_001,
+        });
+    });
+
+    it("classifies an ordinary error without a cause without opening the circuit", async () => {
+        const circuitBreaker = createCircuitBreaker();
+        const failure = new Error("invalid request");
+
+        const rejection = await circuitBreaker
+            .execute(async () => {
+                throw failure;
+            })
+            .catch((error: unknown) => error);
+
+        expect(rejection).toBeInstanceOf(ResilienceError);
+        expect(rejection).not.toBeInstanceOf(TypeError);
+        expect(rejection).toMatchObject({
+            message: "invalid request",
+            isRetryable: false,
+            isCircuitBreakerFailure: false,
+        });
+        expect(rejection).toHaveProperty("cause", failure);
+        expect(circuitBreaker.getState()).toEqual({
+            state: "closed",
+            failures: 0,
+            lastFailure: null,
         });
     });
 
@@ -113,7 +154,12 @@ describe("CircuitBreaker", () => {
             circuitBreaker.execute(async () => {
                 throw initialFailure;
             }),
-        ).rejects.toBe(initialFailure);
+        ).rejects.toMatchObject({
+            message: initialFailure.message,
+            isRetryable: true,
+            isCircuitBreakerFailure: true,
+            cause: initialFailure,
+        });
 
         vi.setSystemTime(21_001);
         let resolveFirstProbe!: (value: string) => void;
@@ -169,7 +215,12 @@ describe("CircuitBreaker", () => {
             circuitBreaker.execute(async () => {
                 throw initialFailure;
             }),
-        ).rejects.toBe(initialFailure);
+        ).rejects.toMatchObject({
+            message: initialFailure.message,
+            isRetryable: true,
+            isCircuitBreakerFailure: true,
+            cause: initialFailure,
+        });
 
         vi.setSystemTime(6_001);
         let rejectProbe!: (error: Error) => void;
@@ -195,7 +246,12 @@ describe("CircuitBreaker", () => {
         vi.setSystemTime(7_000);
         const probeFailure = serviceFailure("probe failed");
         rejectProbe(probeFailure);
-        await expect(probeExecution).rejects.toBe(probeFailure);
+        await expect(probeExecution).rejects.toMatchObject({
+            message: probeFailure.message,
+            isRetryable: true,
+            isCircuitBreakerFailure: true,
+            cause: probeFailure,
+        });
 
         expect(circuitBreaker.getState()).toEqual({
             state: "open",

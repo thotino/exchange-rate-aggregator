@@ -9,13 +9,13 @@ export abstract class ResilientClient {
     readonly retry: Retry;
     readonly bulkhead: Bulkhead;
     readonly circuitBreaker: CircuitBreaker;
-    readonly requestCoalescer: RequestCoalescer;
+    // readonly requestCoalescer: RequestCoalescer;
     #metricsInterval: NodeJS.Timeout | null = null;
     constructor(options: ResilienceClientConfig) {
         this.retry = new Retry(options.retryOptions);
         this.bulkhead = new Bulkhead(options.bulkheadOptions);
         this.circuitBreaker = new CircuitBreaker(options.circuitBreakerOptions);
-        this.requestCoalescer = new RequestCoalescer();
+        // this.requestCoalescer = new RequestCoalescer();
     }
 
     async connect() {
@@ -37,7 +37,6 @@ export abstract class ResilientClient {
         }
     }
     abstract execute<T>(
-        key: string,
         fn: (options: { signal: AbortSignal }) => Promise<T>,
         options: { cancelSignal: AbortSignal },
     ): Promise<T>;
@@ -45,41 +44,35 @@ export abstract class ResilientClient {
 
 export class LogicalOperationResilientClient extends ResilientClient {
     execute<T>(
-        key: string,
         fn: (options: { signal: AbortSignal }) => Promise<T>,
         options: { cancelSignal: AbortSignal },
     ) {
-        return this.requestCoalescer.get(key, () =>
-            this.circuitBreaker.execute(() =>
-                this.retry.execute(
-                    ({ signal }) => {
-                        return this.bulkhead.execute(fn, {
-                            signal: signal,
-                        });
-                    },
-                    { cancelSignal: options.cancelSignal },
-                ),
+        return this.circuitBreaker.execute(() =>
+            this.retry.execute(
+                ({ signal }) => {
+                    return this.bulkhead.execute(fn, {
+                        signal: signal,
+                    });
+                },
+                { cancelSignal: options.cancelSignal },
             ),
         );
     }
 }
 export class PerAttemptResilientClient extends ResilientClient {
     execute<T>(
-        key: string,
         fn: (options: { signal: AbortSignal }) => Promise<T>,
         options: { cancelSignal: AbortSignal },
     ) {
-        return this.requestCoalescer.get(key, () =>
-            this.retry.execute(
-                ({ signal }) => {
-                    return this.circuitBreaker.execute(() =>
-                        this.bulkhead.execute(fn, {
-                            signal: signal,
-                        }),
-                    );
-                },
-                { cancelSignal: options.cancelSignal },
-            ),
+        return this.retry.execute(
+            ({ signal }) => {
+                return this.circuitBreaker.execute(() =>
+                    this.bulkhead.execute(fn, {
+                        signal: signal,
+                    }),
+                );
+            },
+            { cancelSignal: options.cancelSignal },
         );
     }
 }
