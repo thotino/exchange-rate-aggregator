@@ -152,7 +152,7 @@ export class Bulkhead {
             this.#metricsInterval = null;
         }
     }
-    static #classifyError(reason: any) {
+    static #classifyError(reason: unknown) {
         if (reason instanceof ResilienceError) {
             return {
                 isRetryable: reason.isRetryable,

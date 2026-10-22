@@ -27,7 +27,7 @@ export interface CircuitBreakerOptions {
     readonly resetTimeout: number;
     readonly halfOpenRequests: number;
 }
-interface ResilienceClientConfig {
+export interface ResilienceClientConfig {
     readonly retryOptions: RetryOptions;
     readonly circuitBreakerOptions: CircuitBreakerOptions;
     readonly bulkheadOptions: BulkheadOptions
