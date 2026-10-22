@@ -40,11 +40,11 @@ export function createRateServer(config: RateServerConfig): Server {
 
         switch (config.simulationMode) {
             case SimulationModes.NORMAL:
-                sendJson(response, 200, { rate });
+                sendJson(response, 200, rate);
                 return;
             case SimulationModes.SLOW: {
                 const timer = setTimeout(
-                    () => sendJson(response, 200, { rate }),
+                    () => sendJson(response, 200, rate),
                     config.simulationDelayMs,
                 );
                 response.once("close", () => clearTimeout(timer));

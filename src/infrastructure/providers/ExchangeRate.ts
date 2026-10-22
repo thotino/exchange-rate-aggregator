@@ -26,6 +26,13 @@ export class ExchangeRate {
             hash = Math.imul(hash ^ character.charCodeAt(0), 16777619) >>> 0;
         }
 
-        return Math.round((0.5 + Math.random() + (hash % 200001) / 100000) * 100000) / 100000;
+        return {
+            rate:
+                Math.round(
+                    (0.5 + Math.random() + (hash % 200001) / 100000) * 100000,
+                ) / 100000,
+            asOf: Date.now(),
+            pair,
+        };
     }
 }
