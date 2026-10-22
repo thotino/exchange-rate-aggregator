@@ -154,7 +154,7 @@ describe("ForeignExchangeRate resilience integration", () => {
         );
 
         await expect(
-            client.execute("timeout", timedOperation, {
+            client.execute(timedOperation, {
                 cancelSignal: new AbortController().signal,
             }),
         ).rejects.toThrow();
@@ -168,7 +168,7 @@ describe("ForeignExchangeRate resilience integration", () => {
 
         const nextOperation = vi.fn(async () => "permit reused");
         await expect(
-            client.execute("after-timeout", nextOperation, {
+            client.execute(nextOperation, {
                 cancelSignal: new AbortController().signal,
             }),
         ).resolves.toBe("permit reused");
@@ -381,7 +381,7 @@ describe("ForeignExchangeRate resilience integration", () => {
             }),
         );
         const failure = new Error("provider A unavailable", {
-            cause: { status: 503 },
+            cause: new Response(null, { status: 503 }),
         });
         const failedProbe = vi.fn(async () => {
             throw failure;
@@ -389,20 +389,20 @@ describe("ForeignExchangeRate resilience integration", () => {
         const cancelSignal = new AbortController().signal;
 
         await expect(
-            client.execute("initial-failure", failedProbe, { cancelSignal }),
+            client.execute(failedProbe, { cancelSignal }),
         ).rejects.toThrow();
         expect(client.circuitBreaker.getState().state).toBe("open");
 
         const whileOpen = vi.fn(async () => "must not run");
         await expect(
-            client.execute("while-open", whileOpen, { cancelSignal }),
+            client.execute(whileOpen, { cancelSignal }),
         ).rejects.toThrow();
         expect(whileOpen).not.toHaveBeenCalled();
 
         await vi.advanceTimersByTimeAsync(101);
         const recoveryProbe = vi.fn(async () => "recovered");
         await expect(
-            client.execute("recovery-probe", recoveryProbe, { cancelSignal }),
+            client.execute(recoveryProbe, { cancelSignal }),
         ).resolves.toBe("recovered");
         expect(recoveryProbe).toHaveBeenCalledOnce();
         expect(client.circuitBreaker.getState().state).toBe("closed");

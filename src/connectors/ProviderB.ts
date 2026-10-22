@@ -15,7 +15,7 @@ import { Retry } from "../infrastructure/resilience/Retry";
 import { Providers, type Currencies } from "../interfaces/types";
 import type { GetRatesOptions } from "../types/connector";
 import type { RateProvider } from "../types/provider";
-import type { RawRate } from "../types/rate";
+import type { Rate, RawRate } from "../types/rate";
 
 export class ProviderB implements RateProvider {
     readonly baseUrl: string;
@@ -36,13 +36,7 @@ export class ProviderB implements RateProvider {
             },
             retryOptions: {
                 maxAttempts: 3,
-                factor: 1,
-                initialDelay: 10,
-                maxDelay: 50,
-                timeout: 100,
-                jitter: JitterStatuses.FULL,
-                retryableErrors: [],
-                retryableStatusCodes: [],
+                factor: 2,
             },
         });
     }
@@ -64,7 +58,7 @@ export class ProviderB implements RateProvider {
             rates == null ||
             Number.isNaN(rates.rate) ||
             !Number.isFinite(rates.rate) ||
-            rates.rate < 0 ||
+            rates.rate <= 0 ||
             rates.pair == null ||
             Number.isNaN(rates.asOf) ||
             !Number.isFinite(rates.asOf) ||
@@ -100,9 +94,8 @@ export class ProviderB implements RateProvider {
             }
             return response.json();
         };
-        const coalescerKey = `GetRates::${Providers.PROVIDER_B}-${sourceCurrency}-${targetCurrency}`;
         const requestedAt = Date.now();
-        const rates = await this.#client.execute(coalescerKey, fn, {
+        const rates = await this.#client.execute(fn, {
             cancelSignal: options.cancelSignal,
         });
         const receivedAt = Date.now();
