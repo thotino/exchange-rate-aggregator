@@ -18,6 +18,7 @@ import type {
     GetRatesOptions,
 } from "../types/connector";
 import type { RateProvider } from "../types/provider";
+import type { Rate, RawRate } from "../types/rate";
 
 export class ProviderA implements RateProvider {
     readonly baseUrl: string;
@@ -55,6 +56,38 @@ export class ProviderA implements RateProvider {
     async close() {
         await this.#client.close();
     }
+    static #formatRate(
+        sourceCurrency: Currencies,
+        targetCurrency: Currencies,
+        rates: RawRate,
+        requestedAt: number,
+        receivedAt: number,
+        expiresAt: number,
+    ) {
+        if (
+            rates == null ||
+            Number.isNaN(rates.rate) ||
+            !Number.isFinite(rates.rate) ||
+            rates.rate < 0 ||
+            rates.pair == null ||
+            Number.isNaN(rates.asOf) ||
+            !Number.isFinite(rates.asOf) ||
+            rates.asOf < 0
+        ) {
+            throw new InvalidRateError();
+        }
+        const normalizedRate: Rate = {
+            from: sourceCurrency,
+            to: targetCurrency,
+            rate: rates.rate,
+            provider: Providers.PROVIDER_A,
+            requestedAt,
+            receivedAt,
+            expiresAt,
+            providerUpdatedAt: rates.asOf,
+        };
+        return normalizedRate;
+    }
     async getRates(
         sourceCurrency: Currencies,
         targetCurrency: Currencies,
@@ -73,26 +106,18 @@ export class ProviderA implements RateProvider {
         };
         const requestedAt = Date.now();
         const coalescerKey = `GetRates::${Providers.PROVIDER_A}-${sourceCurrency}-${targetCurrency}`;
-        const rates = await this.#client.execute(coalescerKey, fn, {
+        const rates = (await this.#client.execute(coalescerKey, fn, {
             cancelSignal: options.cancelSignal,
-        });
+        })) as RawRate;
         const receivedAt = Date.now();
         const expiresAt = receivedAt + 5 * 60 * 1000;
-        if (
-            Number.isNaN(rates.rate) ||
-            !Number.isFinite(rates.rate) ||
-            rates.rate < 0
-        ) {
-            throw new InvalidRateError();
-        }
-        return {
-            from: sourceCurrency,
-            to: targetCurrency,
-            rate: rates.rate,
-            provider: Providers.PROVIDER_A,
+        return ProviderA.#formatRate(
+            sourceCurrency,
+            targetCurrency,
+            rates,
             requestedAt,
             receivedAt,
             expiresAt,
-        };
+        );
     }
 }
