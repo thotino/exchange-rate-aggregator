@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InvalidRetryOptionError } from "../errors/InvalidRetryOptionError";
+import { GlobalTimeoutError } from "../errors/GlobalTimeoutError";
 import { ResilienceError } from "../errors/ResilienceError";
 import { JitterStatuses } from "../constants";
 import type { RetryOptions } from "../types";
@@ -36,6 +37,19 @@ function createRetry(options: Partial<RetryOptions> = {}) {
 
 function retryableError(message: string) {
     return new Error(message, { cause: { code: "ECONNRESET" } });
+}
+
+function retryAfterError(value: string) {
+    return new ResilienceError(
+        "service unavailable",
+        "ERR_SERVICE_UNAVAILABLE",
+        true,
+        true,
+        new Response(null, {
+            status: 503,
+            headers: { "retry-after": value },
+        }),
+    );
 }
 
 function deferred<T>() {
@@ -87,11 +101,16 @@ describe("Retry", () => {
 
     it.each([
         { option: "maxAttempts", value: 0 },
+        { option: "maxAttempts", value: -1 },
         { option: "maxAttempts", value: 1.5 },
         { option: "initialDelay", value: 0 },
+        { option: "initialDelay", value: Number.NaN },
         { option: "maxDelay", value: 0 },
+        { option: "maxDelay", value: 0.5 },
         { option: "factor", value: 0 },
+        { option: "factor", value: Number.POSITIVE_INFINITY },
         { option: "timeout", value: 0 },
+        { option: "timeout", value: Number.NaN },
     ])("rejects invalid options ($option)", ({ option, value }) => {
         expect(() => createRetry({ [option]: value })).toThrow(
             InvalidRetryOptionError,
@@ -111,6 +130,24 @@ describe("Retry", () => {
             }),
         ).resolves.toBe("ok");
         expect(operation).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not start an attempt when already cancelled", async () => {
+        const retry = createRetry();
+        const cancelController = new AbortController();
+        const operation = vi.fn(async () => "must not run");
+        cancelController.abort();
+
+        await expect(
+            retry.execute(operation, {
+                cancelSignal: cancelController.signal,
+            }),
+        ).rejects.toBeInstanceOf(GlobalTimeoutError);
+        expect(operation).not.toHaveBeenCalled();
+        expect(retry.getMetrics()).toEqual({
+            attempts: 0,
+            attemptsDurationMS: 0,
+        });
     });
 
     it("retries once after a transient error and then succeeds", async () => {
@@ -250,6 +287,45 @@ describe("Retry", () => {
             }),
         ).rejects.toMatchObject({
             message: "invalid request",
+            isRetryable: false,
+            isCircuitBreakerFailure: false,
+        });
+        expect(operation).toHaveBeenCalledTimes(1);
+    });
+
+    it("preserves an existing ResilienceError without retrying", async () => {
+        const retry = createRetry();
+        const error = new ResilienceError(
+            "already classified",
+            "ERR_CUSTOM",
+            false,
+            true,
+            null,
+        );
+        const operation = vi.fn(async () => {
+            throw error;
+        });
+
+        await expect(
+            retry.execute(operation, {
+                cancelSignal: new AbortController().signal,
+            }),
+        ).rejects.toBe(error);
+        expect(operation).toHaveBeenCalledTimes(1);
+    });
+
+    it("converts a rejected non-Error value to a ResilienceError", async () => {
+        const retry = createRetry();
+        const operation = vi.fn(async () => {
+            throw { reason: "invalid request" };
+        });
+
+        await expect(
+            retry.execute(operation, {
+                cancelSignal: new AbortController().signal,
+            }),
+        ).rejects.toMatchObject({
+            message: '{"reason":"invalid request"}',
             isRetryable: false,
             isCircuitBreakerFailure: false,
         });
@@ -407,18 +483,81 @@ describe("Retry", () => {
         expect(vi.getTimerCount()).toBe(0);
     });
 
-    it("uses the configured backoff when classification drops the Retry-After header", async () => {
+    it("uses a Retry-After delay in seconds instead of the configured backoff", async () => {
+        vi.useFakeTimers();
+        const retry = createRetry({
+            initialDelay: 10,
+            maxDelay: 5_000,
+            jitter: JitterStatuses.NONE,
+        });
+        const operation = vi
+            .fn<() => Promise<string>>()
+            .mockRejectedValueOnce(retryAfterError("2"))
+            .mockResolvedValueOnce("ok");
+
+        const execution = retry.execute(operation, {
+            cancelSignal: new AbortController().signal,
+        });
+        await vi.advanceTimersByTimeAsync(1_999);
+        expect(operation).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(1);
+
+        await expect(execution).resolves.toBe("ok");
+        expect(operation).toHaveBeenCalledTimes(2);
+    });
+
+    it("parses an HTTP-date Retry-After header", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-10-22T00:00:00.000Z"));
+        const retry = createRetry({
+            initialDelay: 10,
+            maxDelay: 5_000,
+            jitter: JitterStatuses.NONE,
+        });
+        const retryAt = new Date(Date.now() + 2_000).toUTCString();
+        const operation = vi
+            .fn<() => Promise<string>>()
+            .mockRejectedValueOnce(retryAfterError(retryAt))
+            .mockResolvedValueOnce("ok");
+
+        const execution = retry.execute(operation, {
+            cancelSignal: new AbortController().signal,
+        });
+        await vi.advanceTimersByTimeAsync(1_999);
+        expect(operation).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(1);
+
+        await expect(execution).resolves.toBe("ok");
+        expect(operation).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not retry when Retry-After exceeds maxDelay", async () => {
         vi.useFakeTimers();
         const retry = createRetry({ maxDelay: 500 });
-        const error = Object.assign(
-            retryableError("service unavailable"),
-            {
-                response: {
-                    status: 503,
-                    headers: new Headers({ "retry-after": "1" }),
-                },
+        const error = retryAfterError("1");
+        const operation = vi.fn<() => Promise<string>>().mockRejectedValue(error);
+
+        await expect(
+            retry.execute(operation, {
+                cancelSignal: new AbortController().signal,
+            }),
+        ).rejects.toBe(error);
+        expect(operation).toHaveBeenCalledTimes(1);
+    });
+
+    it("uses configured backoff when Retry-After is not in the error cause", async () => {
+        vi.useFakeTimers();
+        const retry = createRetry({
+            initialDelay: 20,
+            maxDelay: 500,
+            jitter: JitterStatuses.NONE,
+        });
+        const error = Object.assign(retryableError("service unavailable"), {
+            response: {
+                status: 503,
+                headers: new Headers({ "retry-after": "1" }),
             },
-        );
+        });
         const operation = vi
             .fn<() => Promise<string>>()
             .mockRejectedValueOnce(error)
@@ -427,7 +566,9 @@ describe("Retry", () => {
         const execution = retry.execute(operation, {
             cancelSignal: new AbortController().signal,
         });
-        await vi.advanceTimersByTimeAsync(10);
+        await vi.advanceTimersByTimeAsync(19);
+        expect(operation).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(1);
 
         await expect(execution).resolves.toBe("ok");
         expect(operation).toHaveBeenCalledTimes(2);

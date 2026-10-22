@@ -10,6 +10,10 @@ function jsonResponse(body: unknown, status = 200) {
     return new Response(JSON.stringify(body), { status });
 }
 
+function rateResponse(rate: unknown, status = 200) {
+    return jsonResponse({ rate, pair: "EUR/USD", asOf: Date.now() }, status);
+}
+
 function countCallsTo(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>, baseUrl: string) {
     return fetchMock.mock.calls.filter(([input]) =>
         String(input).startsWith(baseUrl),
@@ -73,8 +77,8 @@ describe("ForeignExchangeRate resilience integration", () => {
     it("1. returns the rate from provider A when A responds normally", async () => {
         const fetchMock = vi.fn<typeof fetch>().mockImplementation(async input =>
             String(input).startsWith(PROVIDER_A_URL)
-                ? jsonResponse({ rate: 1.234 })
-                : jsonResponse({ rate: 9.876 }),
+                ? rateResponse(1.234)
+                : rateResponse(9.876),
         );
         const { ForeignExchangeRate, ProviderA, ProviderB } =
             await loadApplication(fetchMock);
@@ -100,9 +104,9 @@ describe("ForeignExchangeRate resilience integration", () => {
                 attempts++;
                 return attempts === 1
                     ? jsonResponse({ error: "temporary" }, 503)
-                    : jsonResponse({ rate: 1.75 });
+                    : rateResponse(1.75);
             }
-            return jsonResponse({ rate: 8.25 });
+            return rateResponse(8.25);
         });
         const { ForeignExchangeRate, ProviderA, ProviderB } =
             await loadApplication(fetchMock);
@@ -158,7 +162,7 @@ describe("ForeignExchangeRate resilience integration", () => {
         expect(timedOperation).toHaveBeenCalledOnce();
         expect(attemptSignal?.aborted).toBe(true);
         expect(client.bulkhead.getMetrics()).toMatchObject({
-            availablePermits: 1,
+            availablePermits: 10,
             failed: 1,
         });
 
@@ -169,7 +173,7 @@ describe("ForeignExchangeRate resilience integration", () => {
             }),
         ).resolves.toBe("permit reused");
         expect(nextOperation).toHaveBeenCalledOnce();
-        expect(client.bulkhead.getMetrics().availablePermits).toBe(1);
+        expect(client.bulkhead.getMetrics().availablePermits).toBe(10);
     });
 
     it("4. opens provider A's circuit after its retry attempts accumulate failures", async () => {
@@ -216,7 +220,7 @@ describe("ForeignExchangeRate resilience integration", () => {
             if (String(input).startsWith(PROVIDER_A_URL)) {
                 throw new TypeError("provider A unavailable");
             }
-            return jsonResponse({ rate: 2.5 });
+            return rateResponse(2.5);
         });
         const { ForeignExchangeRate, ProviderA, ProviderB } =
             await loadApplication(fetchMock);
@@ -228,7 +232,6 @@ describe("ForeignExchangeRate resilience integration", () => {
         const result = await exchange.get(Currencies.GBP, Currencies.USD);
 
         expect(result).toMatchObject({
-            provider: Providers.PROVIDER_B,
             rate: 2.5,
         });
         expect(countCallsTo(fetchMock, PROVIDER_A_URL)).toBe(1);
@@ -240,8 +243,8 @@ describe("ForeignExchangeRate resilience integration", () => {
         const fetchMock = vi.fn<typeof fetch>().mockImplementation(async input => {
             if (providerDown) throw new TypeError("provider unavailable");
             return String(input).startsWith(PROVIDER_A_URL)
-                ? jsonResponse({ rate: 3.125 })
-                : jsonResponse({ rate: 7.875 });
+                ? rateResponse(3.125)
+                : rateResponse(7.875);
         });
         const { ForeignExchangeRate, ProviderA, ProviderB } =
             await loadApplication(fetchMock);
@@ -271,8 +274,8 @@ describe("ForeignExchangeRate resilience integration", () => {
         const fetchMock = vi.fn<typeof fetch>().mockImplementation(async input => {
             if (providerDown) throw new TypeError("provider unavailable");
             return String(input).startsWith(PROVIDER_A_URL)
-                ? jsonResponse({ rate: 4.125 })
-                : jsonResponse({ rate: 6.875 });
+                ? rateResponse(4.125)
+                : rateResponse(6.875);
         });
         let providerDown = false;
         const { ForeignExchangeRate, ProviderA, ProviderB } =
@@ -308,7 +311,7 @@ describe("ForeignExchangeRate resilience integration", () => {
         const fetchMock = vi.fn<typeof fetch>().mockImplementation(input =>
             String(input).startsWith(PROVIDER_A_URL)
                 ? providerAResponse
-                : Promise.resolve(jsonResponse({ rate: 5.5 })),
+                : Promise.resolve(rateResponse(5.5)),
         );
         const { ForeignExchangeRate, ProviderA, ProviderB } =
             await loadApplication(fetchMock);
@@ -316,42 +319,38 @@ describe("ForeignExchangeRate resilience integration", () => {
             new ProviderA(PROVIDER_A_URL),
             new ProviderB(PROVIDER_B_URL),
         );
-        const pairs = [
-            [Currencies.EUR, Currencies.EUR],
-            [Currencies.EUR, Currencies.USD],
-            [Currencies.EUR, Currencies.GBP],
-            [Currencies.USD, Currencies.EUR],
-            [Currencies.USD, Currencies.USD],
-            [Currencies.USD, Currencies.GBP],
-            [Currencies.GBP, Currencies.EUR],
-            [Currencies.GBP, Currencies.USD],
-        ] as const;
-        const firstSeven = pairs.slice(0, 7).map(([from, to]) =>
-            exchange.get(from, to),
+        const pairs = Array.from({ length: 31 }, (_, index) => [
+            `source-${index}`,
+            `target-${index}`,
+        ] as const);
+        const firstThirty = pairs.slice(0, 30).map(([from, to]) =>
+            exchange.get(from as Currencies, to as Currencies),
         );
 
         await vi.waitFor(() => {
-            expect(countCallsTo(fetchMock, PROVIDER_A_URL)).toBe(2);
+            expect(countCallsTo(fetchMock, PROVIDER_A_URL)).toBe(10);
         });
-        const overflow = exchange.get(...pairs[7]);
+        const overflow = exchange.get(
+            pairs[30][0] as Currencies,
+            pairs[30][1] as Currencies,
+        );
 
         await expect(overflow).resolves.toMatchObject({
-            provider: Providers.PROVIDER_B,
             rate: 5.5,
         });
-        expect(countCallsTo(fetchMock, PROVIDER_A_URL)).toBe(2);
+        expect(countCallsTo(fetchMock, PROVIDER_A_URL)).toBe(10);
         expect(countCallsTo(fetchMock, PROVIDER_B_URL)).toBe(1);
 
-        releaseProviderA(jsonResponse({ rate: 1.5 }));
-        await expect(Promise.all(firstSeven)).resolves.toHaveLength(7);
-        expect(countCallsTo(fetchMock, PROVIDER_A_URL)).toBe(7);
+        releaseProviderA(rateResponse(1.5));
+        await expect(Promise.all(firstThirty)).resolves.toHaveLength(30);
+        expect(countCallsTo(fetchMock, PROVIDER_A_URL)).toBe(30);
     });
 
     it("10. rejects an invalid A response and applies the B fallback", async () => {
         const fetchMock = vi.fn<typeof fetch>().mockImplementation(async input =>
             String(input).startsWith(PROVIDER_A_URL)
-                ? jsonResponse({ rate: "not-a-number" })
-                : jsonResponse({ rate: 6.25 }),
+                ? rateResponse("not-a-number")
+                : rateResponse(6.25),
         );
         const { ForeignExchangeRate, ProviderA, ProviderB } =
             await loadApplication(fetchMock);
@@ -363,7 +362,6 @@ describe("ForeignExchangeRate resilience integration", () => {
         const result = await exchange.get(Currencies.USD, Currencies.USD);
 
         expect(result).toMatchObject({
-            provider: Providers.PROVIDER_B,
             rate: 6.25,
         });
         expect(countCallsTo(fetchMock, PROVIDER_A_URL)).toBe(1);
