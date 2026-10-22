@@ -33,18 +33,22 @@ export class CircuitBreaker {
     #halfOpenAttemps = 0;
     #stateInterval: NodeJS.Timeout | null = null;
     constructor(
-        options: CircuitBreakerOptions = DEFAULT_CIRCUIT_BREAKER_OPTIONS,
+        options: Partial<CircuitBreakerOptions>,
     ) {
+        const resolvedOptions = {
+            ...DEFAULT_CIRCUIT_BREAKER_OPTIONS,
+            ...options,
+        };
         if (
-            options.failureThreshold < 1 ||
-            options.halfOpenRequests < 1 ||
-            options.resetTimeout <= 0
+            resolvedOptions.failureThreshold < 1 ||
+            resolvedOptions.halfOpenRequests < 1 ||
+            resolvedOptions.resetTimeout <= 0
         ) {
             throw new InvalidCircuitBreakerOptionError();
         }
-        this.#failureThreshold = options.failureThreshold;
-        this.#resetTimeout = options.resetTimeout;
-        this.#halfOpenRequests = options.halfOpenRequests;
+        this.#failureThreshold = resolvedOptions.failureThreshold;
+        this.#resetTimeout = resolvedOptions.resetTimeout;
+        this.#halfOpenRequests = resolvedOptions.halfOpenRequests;
     }
     async connect() {
         if (this.#stateInterval == null) {

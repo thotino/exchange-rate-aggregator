@@ -46,22 +46,23 @@ export class Bulkhead {
         failed: 0,
     };
     #metricsInterval: NodeJS.Timeout | null = null;
-    constructor(config: BulkheadOptions = DEFAULT_BULKHEAD_OPTIONS) {
-        this.#name = config.name;
+    constructor(config: Partial<BulkheadOptions>) {
+        const resolvedOptions = { ...DEFAULT_BULKHEAD_OPTIONS, config };
+        this.#name = resolvedOptions.name;
         if (
-            !Number.isInteger(config.maxConcurrent) ||
-            config.maxConcurrent <= 0 ||
-            !Number.isInteger(config.maxWaiting) ||
-            config.maxWaiting < 0 ||
-            !Number.isFinite(config.timeoutMS) ||
-            config.timeoutMS <= 0
+            !Number.isInteger(resolvedOptions.maxConcurrent) ||
+            resolvedOptions.maxConcurrent <= 0 ||
+            !Number.isInteger(resolvedOptions.maxWaiting) ||
+            resolvedOptions.maxWaiting < 0 ||
+            !Number.isFinite(resolvedOptions.timeoutMS) ||
+            resolvedOptions.timeoutMS <= 0
         ) {
             throw new InvalidBulkheadOptionError();
         }
-        this.#maxConcurrent = config.maxConcurrent;
-        this.#permits = config.maxConcurrent;
-        this.#maxWaiting = config.maxWaiting;
-        this.#waitTimeoutMS = config.timeoutMS;
+        this.#maxConcurrent = resolvedOptions.maxConcurrent;
+        this.#permits = resolvedOptions.maxConcurrent;
+        this.#maxWaiting = resolvedOptions.maxWaiting;
+        this.#waitTimeoutMS = resolvedOptions.timeoutMS;
     }
 
     async #acquire({ signal }: { signal: AbortSignal }) {
