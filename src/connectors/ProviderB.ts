@@ -1,17 +1,9 @@
 import { InvalidRateError } from "../errors/InvalidRateError";
 import { ProviderError } from "../errors/ProviderError";
-import { ProviderTimeoutError } from "../errors/ProviderTimeoutError";
-import { ProviderUnavailableError } from "../errors/ProviderUnavailableError";
-import { Bulkhead } from "../infrastructure/resilience/Bulkhead";
-import { CircuitBreaker } from "../infrastructure/resilience/CircuitBreaker";
-import { JitterStatuses } from "../infrastructure/resilience/constants";
-import { RequestCoalescer } from "../infrastructure/resilience/RequestCoalescer";
 import {
-    LogicalOperationResilientClient,
     PerAttemptResilientClient,
     ResilientClient,
-} from "../infrastructure/resilience/ResilientClient";
-import { Retry } from "../infrastructure/resilience/Retry";
+} from "node-resilient-client";
 import { Providers, type Currencies } from "../interfaces/types";
 import type { GetRatesOptions } from "../types/connector";
 import type { RateProvider } from "../types/provider";
@@ -70,7 +62,7 @@ export class ProviderB implements RateProvider {
             from: sourceCurrency,
             to: targetCurrency,
             rate: rates.rate,
-            provider: Providers.PROVIDER_A,
+            provider: Providers.PROVIDER_B,
             requestedAt,
             receivedAt,
             expiresAt,

@@ -1,28 +1,16 @@
 import { InvalidRateError } from "../errors/InvalidRateError";
 import { ProviderError } from "../errors/ProviderError";
-import { ProviderTimeoutError } from "../errors/ProviderTimeoutError";
-import { ProviderUnavailableError } from "../errors/ProviderUnavailableError";
-import { Bulkhead } from "../infrastructure/resilience/Bulkhead";
-import { CircuitBreaker } from "../infrastructure/resilience/CircuitBreaker";
-import { JitterStatuses } from "../infrastructure/resilience/constants";
-import { RequestCoalescer } from "../infrastructure/resilience/RequestCoalescer";
-import {
-    LogicalOperationResilientClient,
-    PerAttemptResilientClient,
-    ResilientClient,
-} from "../infrastructure/resilience/ResilientClient";
-import { Retry } from "../infrastructure/resilience/Retry";
 import { Providers, type Currencies } from "../interfaces/types";
-import type {
-    BaseConnectorInterface,
-    GetRatesOptions,
-} from "../types/connector";
+import {
+    PerAttemptResilientClient,
+    type ResilientClient,
+} from "node-resilient-client";
+import type { GetRatesOptions } from "../types/connector";
 import type { RateProvider } from "../types/provider";
 import type { Rate, RawRate } from "../types/rate";
 
 export class ProviderA implements RateProvider {
     readonly baseUrl: string;
-    // TODO: implement the inversion of dependencies here
     #client: ResilientClient;
     constructor(readonly url: string) {
         this.baseUrl = url;

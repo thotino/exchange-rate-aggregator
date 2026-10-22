@@ -31,6 +31,7 @@
   "dependencies": {
     "@isaacs/ttlcache": "^2.1.5",
     "config": "^5.0.1",
-    "winston": "^3.19.0"
+    "winston": "^3.19.0",
+    "node-resilient-client": "git+https://github.com/thotino/node-resilient-client.git"
   }
 }
