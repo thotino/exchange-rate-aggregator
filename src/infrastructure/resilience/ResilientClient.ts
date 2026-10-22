@@ -1,5 +1,6 @@
 import { Bulkhead } from "./Bulkhead";
 import { CircuitBreaker } from "./CircuitBreaker";
+import { logger } from "./logger";
 import { RequestCoalescer } from "./RequestCoalescer";
 import { Retry } from "./Retry";
 import type { ResilienceClientConfig } from "./types";
@@ -9,20 +10,31 @@ export abstract class ResilientClient {
     readonly bulkhead: Bulkhead;
     readonly circuitBreaker: CircuitBreaker;
     readonly requestCoalescer: RequestCoalescer;
+    #metricsInterval: NodeJS.Timeout | null = null;
     constructor(options: ResilienceClientConfig) {
         this.retry = new Retry(options.retryOptions);
         this.bulkhead = new Bulkhead(options.bulkheadOptions);
         this.circuitBreaker = new CircuitBreaker(options.circuitBreakerOptions);
         this.requestCoalescer = new RequestCoalescer();
     }
+
     async connect() {
-        await Promise.all([
-            this.bulkhead.connect(),
-            this.circuitBreaker.connect(),
-        ]);
+        if (this.#metricsInterval == null) {
+            this.#metricsInterval = setInterval(() => {
+                const metrics = {
+                    bulkhead: this.bulkhead.getMetrics(),
+                    retry: this.retry.getMetrics(),
+                    circuitBreaker: this.circuitBreaker.getState(),
+                };
+                logger.debug("[Client]:: Metrics", metrics);
+            }, 10_000);
+        }
     }
     async close() {
-        await Promise.all([this.circuitBreaker.close(), this.bulkhead.close()]);
+        if (this.#metricsInterval != null) {
+            clearInterval(this.#metricsInterval);
+            this.#metricsInterval = null;
+        }
     }
     abstract execute<T>(
         key: string,

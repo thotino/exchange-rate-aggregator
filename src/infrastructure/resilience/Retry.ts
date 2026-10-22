@@ -39,6 +39,10 @@ export class Retry {
     #timeout: number = 30000;
     #retryableErrors: Set<string>;
     #retryableStatusCodes: Set<number>;
+    #metrics: {
+        totalAttempts: number;
+        totalAttemptsDurationMs: number;
+    } = { totalAttempts: 0, totalAttemptsDurationMs: 0 };
     constructor(options: Partial<RetryOptions>) {
         const resolvedOptions = { ...DEFAULT_OPTIONS, ...options };
         if (
@@ -154,6 +158,8 @@ export class Retry {
                 this.#timeout,
             );
             try {
+                this.#metrics.totalAttempts++;
+                const t0 = performance.now();
                 try {
                     return await fn({
                         signal: AbortSignal.any([
@@ -163,6 +169,7 @@ export class Retry {
                     });
                 } finally {
                     clearTimeout(timer);
+                    this.#metrics.totalAttemptsDurationMs += performance.now() - t0;
                 }
             } catch (err) {
                 const error = Retry.#ensureError(err);
@@ -217,5 +224,11 @@ export class Retry {
         } catch (error) {}
         const error = new Error(stringifiedValue);
         return error;
+    }
+    getMetrics() {
+        return {
+            attempts: this.#metrics.totalAttempts,
+            attemptsDurationMS: this.#metrics.totalAttemptsDurationMs,
+        };
     }
 }
